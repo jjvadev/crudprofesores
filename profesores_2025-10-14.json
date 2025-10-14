@@ -1,0 +1,49 @@
+[
+  {
+    "cedula": "1012345678",
+    "nombre": "Ana María Pérez",
+    "tipo": "Planta",
+    "horasSemanales": 16,
+    "actividades": "Clases de Cálculo I y asesorías.",
+    "ubicacionTrabajo": "Bloque A - Of. 203",
+    "lugarResidencia": "Laureles, Medellín",
+    "telefono": "3001234567",
+    "email": "ana.perez@uni.edu",
+    "horarios": [
+      {
+        "dia": "Lunes",
+        "inicio": "08:00",
+        "fin": "10:00",
+        "materia": "Cálculo I",
+        "aula": "A-201"
+      },
+      {
+        "dia": "Sábado",
+        "inicio": "08:00",
+        "fin": "10:00",
+        "materia": "Clase",
+        "aula": "A-101"
+      }
+    ],
+    "actividadesLista": []
+  },
+  {
+    "cedula": "1098765432",
+    "nombre": "Carlos Gómez",
+    "tipo": "Catedrático",
+    "horasSemanales": 8,
+    "actividades": "Cátedra de Programación.",
+    "ubicacionTrabajo": "Bloque B - Lab. 1",
+    "lugarResidencia": "Envigado",
+    "telefono": "",
+    "email": "carlos.gomez@uni.edu",
+    "horarios": [],
+    "actividadesLista": [
+      {
+        "nombre": "Tutoria",
+        "horas": 12,
+        "nota": "qweqe"
+      }
+    ]
+  }
+]

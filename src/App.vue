@@ -208,7 +208,7 @@
         <div class="modal-head">
           <div>
             <h2>{{ formMode === 'create' ? 'Nuevo profesor' : 'Editar profesor' }}</h2>
-            <small class="muted">Obligatorios: <span class="req">Cédula</span>, <span class="req">Nombre</span> y <span class="req">Tipo</span>.</small>
+            <small class="muted">Obligatorios: <span class="req">Nombre</span> y <span class="req">Tipo</span>.</small>
           </div>
           <button class="icon-btn" @click="closeForm" aria-label="Cerrar">✖</button>
         </div>
@@ -216,7 +216,7 @@
         <form class="form-grid" @submit.prevent="save">
           <div class="field">
             <label>Cédula *</label>
-            <input v-model.trim="form.cedula" :disabled="formMode==='edit'" required placeholder="1012345678" />
+            <input v-model.trim="form.cedula" required placeholder="1012345678" />
           </div>
           <div class="field">
             <label>Nombre completo *</label>

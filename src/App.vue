@@ -66,6 +66,7 @@
       </div>
 
       <article v-for="p in filtrados" :key="p.cedula" class="card">
+        <div class="card-bar"></div>
         <div class="card-head">
           <div class="person">
             <div class="avatar" aria-hidden>👤</div>
@@ -96,7 +97,7 @@
           </div>
         </div>
 
-        <!-- Chips de actividades si hay estructura -->
+        <!-- Chips de actividades -->
         <div v-if="(p.actividadesLista && p.actividadesLista.length) || p.actividades" class="activities">
           <template v-if="p.actividadesLista && p.actividadesLista.length">
             <span v-for="(a,i) in p.actividadesLista" :key="i" class="act-chip" :title="a.nota || ''">
@@ -164,6 +165,8 @@
           <span class="legend-item planta">Planta</span>
           <span class="legend-item catedra">Catedrático</span>
           <span class="legend-item contrato">Contrato</span>
+          <span class="legend-item mode">🏫 Presencial</span>
+          <span class="legend-item mode">💻 Virtual</span>
         </div>
         <div class="muted">Vista semanal de horarios ({{ startHour }}:00–{{ endHour }}:00)</div>
       </div>
@@ -178,12 +181,12 @@
           <div class="day-col" v-for="(d,di) in days" :key="'col-'+d" :style="{height: plannerHeight+'px'}">
             <div v-for="h in hourMarks" :key="d+'-'+h" class="hour-line"></div>
 
-            <!-- bloques -->
+            <!-- Bloques -->
             <div
               v-for="(b, i) in semanaBlocks.filter(x=>x.dayIndex===di)"
               :key="d+'-b-'+i"
               class="block"
-              :class="b.kind"
+              :class="[b.kind, b.mode]"
               :style="{ top: b.top+'px', height: b.height+'px' }"
               :title="b.title+' — '+b.subtitle"
             >
@@ -208,7 +211,7 @@
         <div class="modal-head">
           <div>
             <h2>{{ formMode === 'create' ? 'Nuevo profesor' : 'Editar profesor' }}</h2>
-            <small class="muted">Obligatorios: <span class="req">Nombre</span> y <span class="req">Tipo</span>.</small>
+            <small class="muted">Obligatorios: <span class="req">Cédula</span>, <span class="req">Nombre</span> y <span class="req">Tipo</span>.</small>
           </div>
           <button class="icon-btn" @click="closeForm" aria-label="Cerrar">✖</button>
         </div>
@@ -296,6 +299,10 @@
               </select>
               <input v-model="h.inicio" type="time" />
               <input v-model="h.fin" type="time" />
+              <select v-model="h.modalidad" title="Modalidad">
+                <option value="Presencial">Presencial</option>
+                <option value="Virtual">Virtual</option>
+              </select>
               <input v-model.trim="h.materia" placeholder="Materia" />
               <div class="horario-right">
                 <input v-model.trim="h.aula" placeholder="Aula" />
@@ -378,6 +385,7 @@
                     <th>Fin</th>
                     <th>Materia</th>
                     <th>Aula</th>
+                    <th>Modalidad</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -387,6 +395,7 @@
                     <td>{{ h.fin }}</td>
                     <td>{{ h.materia || '—' }}</td>
                     <td>{{ h.aula || '—' }}</td>
+                    <td>{{ h.modalidad || '—' }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -424,10 +433,10 @@ const form = ref(emptyForm())
 const toasts = ref([])
 const horarioWarnings = ref([])
 
-/* ===== Constants for planner ===== */
+/* ===== Planner config ===== */
 const startHour = 6
 const endHour = 22
-const pxPerMin = 1 // 1px == 1min => 16h = 960px (suave al scrollear)
+const pxPerMin = 1
 const plannerHeight = (endHour - startHour) * 60 * pxPerMin
 const days = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo']
 const hourMarks = Array.from({length: endHour - startHour + 1}, (_,i)=> i + startHour)
@@ -437,12 +446,14 @@ const filtrados = computed(() => {
   const q = query.value.trim().toLowerCase()
   return profesores.value
     .filter(p => !filtroTipo.value || p.tipo === filtroTipo.value)
-    .filter(p => !q ? true : String(p.cedula).toLowerCase().includes(q) || (p.nombre || '').toLowerCase().includes(q))
+    .filter(p => {
+      if (!q) return true
+      return String(p.cedula).toLowerCase().includes(q) || (p.nombre || '').toLowerCase().includes(q)
+    })
     .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''))
 })
 
 const semanaBlocks = computed(() => {
-  // construir bloques para la vista semanal desde los profesores filtrados
   const blocks = []
   for (const p of filtrados.value) {
     if (!Array.isArray(p.horarios)) continue
@@ -453,15 +464,16 @@ const semanaBlocks = computed(() => {
       const s = toMinutes(h.inicio)
       const e = toMinutes(h.fin)
       if (s == null || e == null || e <= s) continue
-      const top = (s - startHour * 60) * pxPerMin
-      const height = (e - s) * pxPerMin
+      const mode = h.modalidad === 'Virtual' ? 'm-virtual' : 'm-presencial'
+      const emoji = h.modalidad === 'Virtual' ? '💻 Virtual' : '🏫 Presencial'
       blocks.push({
         dayIndex: di,
-        top,
-        height,
+        top: (s - startHour * 60) * pxPerMin,
+        height: (e - s) * pxPerMin,
         kind: kindClass(p.tipo),
+        mode,
         title: (h.materia || 'Clase') + (h.aula ? ` · ${h.aula}` : ''),
-        subtitle: `${p.nombre} (${p.tipo})`,
+        subtitle: `${emoji} • ${p.nombre} (${p.tipo})`,
       })
     }
   }
@@ -478,7 +490,7 @@ onMounted(() => {
         actividades: 'Clases de Cálculo I y asesorías.',
         ubicacionTrabajo: 'Bloque A - Of. 203', lugarResidencia: 'Laureles, Medellín',
         telefono: '3001234567', email: 'ana.perez@uni.edu',
-        horarios: [ { dia: 'Lunes', inicio: '08:00', fin: '10:00', materia: 'Cálculo I', aula: 'A-201' } ] },
+        horarios: [ { dia: 'Lunes', inicio: '08:00', fin: '10:00', modalidad: 'Presencial', materia: 'Cálculo I', aula: 'A-201' } ] },
       { cedula: '1098765432', nombre: 'Carlos Gómez', tipo: 'Catedrático', horasSemanales: 8,
         actividadesLista: [{ nombre: 'Cátedra', horas: 8 }],
         actividades: 'Cátedra de Programación.',
@@ -542,14 +554,14 @@ function toMinutes(t) {
   const [hh, mm] = t.split(':').map(Number)
   return hh * 60 + mm
 }
+function mins(m){ return `${pad(Math.floor(m/60))}:${pad(m%60)}` }
 
 /* ===== DB ===== */
 function loadDB () {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     profesores.value = raw ? JSON.parse(raw) : []
-  } catch (e) {
-    console.error('Error cargando DB', e)
+  } catch {
     profesores.value = []
   }
 }
@@ -581,10 +593,10 @@ function closeForm () {
   horarioWarnings.value = []
 }
 function addHorario () {
-  form.value.horarios.push({ dia: 'Lunes', inicio: '', fin: '', materia: '', aula: '' })
+  form.value.horarios.push({ dia: 'Lunes', inicio: '', fin: '', modalidad: 'Presencial', materia: '', aula: '' })
 }
 function addHorarioPlantilla(dia,inicio,fin,materia,aula){
-  form.value.horarios.push({ dia, inicio, fin, materia, aula })
+  form.value.horarios.push({ dia, inicio, fin, modalidad: 'Presencial', materia, aula })
 }
 function addActividad(){
   form.value.actividadesLista.push({ nombre: '', horas: null, nota: '' })
@@ -612,22 +624,18 @@ function validateHorarios(list) {
   }
   return warnings
 }
-function mins(m){ return `${pad(Math.floor(m/60))}:${pad(m%60)}` }
 
 function save () {
   if (!form.value.cedula || !form.value.nombre || !form.value.tipo) {
     alert('Por favor completa CÉDULA, NOMBRE y TIPO.')
     return
   }
-  // Horarios inválidos bloquean guardar
   const errs = validateHorarios(form.value.horarios || [])
   if (errs.length) {
     alert('Revisa los horarios:\n\n' + errs.join('\n'))
     return
   }
-
   form.value.cedula = String(form.value.cedula).trim()
-
   if (formMode.value === 'create') {
     const exists = profesores.value.some(p => String(p.cedula).trim() === form.value.cedula)
     if (exists) { alert('Ya existe un profesor con esa cédula.'); return }
@@ -689,7 +697,7 @@ function printStyles () {
   h1{margin:0 0 12px;font-size:20px}
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
   .card{border:1px solid #e5e7eb;border-radius:12px;padding:16px}
-  .badge{display:inline-block;border:1px solid #e5e7eb;border-radius:999px;padding:.125rem .5rem;font-size:12px;font-weight:600}
+  .badge{display:inline-block;border:1px solid #e5e7eb;border-radius:9999px;padding:.125rem .5rem;font-size:12px;font-weight:600}
   .muted{color:#64748b;font-size:12px;margin-bottom:4px}
   table{width:100%;border-collapse:collapse} th,td{border:1px solid #e5e7eb;padding:6px;text-align:left} th{background:#f8fafc}`
 }
@@ -698,13 +706,21 @@ function renderFichaInnerHTML (p) {
   const horarios = (p.horarios && p.horarios.length)
     ? `<div style="margin-top:12px">
         <div class="muted">Horarios</div>
-        <table><thead><tr><th>Día</th><th>Inicio</th><th>Fin</th><th>Materia</th><th>Aula</th></tr></thead>
+        <table><thead><tr>
+          <th>Día</th><th>Inicio</th><th>Fin</th><th>Materia</th><th>Aula</th><th>Modalidad</th>
+        </tr></thead>
           <tbody>
-            ${p.horarios.map(h => `<tr><td>${h.dia}</td><td>${h.inicio||'—'}</td><td>${h.fin||'—'}</td><td>${h.materia||'—'}</td><td>${h.aula||'—'}</td></tr>`).join('')}
+            ${p.horarios.map(h => `<tr>
+              <td>${h.dia}</td>
+              <td>${h.inicio||'—'}</td>
+              <td>${h.fin||'—'}</td>
+              <td>${h.materia||'—'}</td>
+              <td>${h.aula||'—'}</td>
+              <td>${h.modalidad||'—'}</td>
+            </tr>`).join('')}
           </tbody>
         </table>
       </div>` : ''
-  // Actividades resumen
   const acts = Array.isArray(p.actividadesLista) && p.actividadesLista.length
     ? '<div class="muted">Actividades</div><ul>' + p.actividadesLista.map(a=>`<li>${a.nombre}${a.horas?` (${a.horas}h)`:''}${a.nota?` — ${a.nota}`:''}</li>`).join('') + '</ul>'
     : (p.actividades ? `<div class="muted">Actividades</div><div>${p.actividades.replace(/\n/g,'<br>')}</div>` : '')
@@ -753,11 +769,14 @@ function handleImport (e) {
       for (const p of incoming) {
         if (!p || !p.cedula) continue
         const key = String(p.cedula).trim()
+        const safeHorarios = Array.isArray(p.horarios)
+          ? p.horarios.map(h => ({ ...h, modalidad: h.modalidad || 'Presencial' }))
+          : []
         map.set(key, {
           ...map.get(key),
           ...p,
           cedula: key,
-          horarios: Array.isArray(p.horarios) ? p.horarios : [],
+          horarios: safeHorarios,
           actividadesLista: Array.isArray(p.actividadesLista) ? p.actividadesLista : (map.get(key)?.actividadesLista || []),
         })
       }
@@ -775,34 +794,41 @@ function handleImport (e) {
 </script>
 
 <style scoped>
-/* ===== THEME: Soft & Solid (sin transparencias, UX/UI claro) ===== */
-:root{
-  --bg: #f4f6f9;            /* fondo suave */
-  --panel: #ffffff;         /* panel SOLIDO */
-  --panel-2: #fbfcfe;
-  --text: #263241;          /* gris oscuro legible (no negro puro) */
-  --muted: #6b7280;
-  --border: #e6eaf0;
-  --border-strong: #cfd6e0;
-  --accent: #3b82f6;        /* azul amable */
-  --accent-600: #2563eb;
+/* ===== THEME: Arena + Verde Agua (limpio, sólido, sin transparencias) ===== */
+.shell{
+  --bg: #f6f3ee;
+  --bg-grad-1: #fffefb;
+  --panel: #ffffff;
+  --panel-2: #fdfcf9;
+  --text: #2c2f2e;
+  --muted: #6f7775;
+  --border: #e7dfd4;
+  --border-strong: #d8cfc2;
+  --accent: #10b981;
+  --accent-600: #0f9e73;
+  --accent-50: #e9fbf4;
   --ok: #16a34a;
   --warn: #d97706;
   --danger: #dc2626;
-
-  --radius-s: 10px;
-  --radius-m: 14px;
-  --radius-l: 16px;
-
-  --shadow-s: 0 1px 2px rgba(38,50,65,.06);
-  --shadow-m: 0 6px 18px rgba(38,50,65,.10);
-  --shadow-l: 0 16px 36px rgba(38,50,65,.14);
+  --radius-s: 12px;
+  --radius-m: 16px;
+  --radius-l: 20px;
+  --shadow-s: 0 1px 2px rgba(30,35,34,.06);
+  --shadow-m: 0 6px 18px rgba(30,35,34,.10);
+  --shadow-l: 0 18px 44px rgba(30,35,34,.14);
 }
 
-/* Base */
 * { box-sizing: border-box }
 html { font-size: 16px }
-body, .shell { background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale }
+body, .shell {
+  background:
+    radial-gradient(900px 600px at -10% -10%, var(--bg-grad-1) 0%, transparent 50%),
+    radial-gradient(900px 600px at 120% 0%, var(--accent-50) 0%, transparent 50%),
+    var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+}
 h1,h2,h3 { margin: 0; line-height: 1.25; font-weight: 800; letter-spacing: .2px }
 p, label, input, select, textarea, button, table { font-size: 1rem; line-height: 1.5 }
 a, button { font-weight: 600 }
@@ -813,23 +839,25 @@ a, button { font-weight: 600 }
 .req { color: var(--danger) }
 .mb { margin-bottom: .5rem }
 .mt { margin-top: 1rem }
+.no-print {}
+@media print { .no-print { display: none !important } }
 
 /* Layout general */
-.shell { min-height: 100vh; display: grid; grid-template-rows: auto auto 1fr; gap: 12px; padding-bottom: 16px }
+.shell { min-height: 100vh; display: grid; grid-template-rows: auto auto 1fr; gap: 14px; padding-bottom: 16px }
 
-/* Topbar (sólido) */
+/* Topbar */
 .nav{
   display:flex; align-items:center; justify-content:space-between; gap:16px;
-  padding: 14px 18px; background: var(--panel); border: 1px solid var(--border);
-  border-radius: var(--radius-l); box-shadow: var(--shadow-m); margin: 14px 14px 0 14px;
+  padding: 16px 18px; background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius-l); box-shadow: var(--shadow-m); margin: 16px 16px 0 16px;
 }
 .brand{ display:flex; align-items:center; gap:12px }
 .logo{
-  width:44px; height:44px; display:grid; place-items:center; border-radius: 12px;
-  background: linear-gradient(135deg, #93c5fd, var(--accent));
-  color: #0f172a; font-weight: 900; box-shadow: var(--shadow-s);
+  width:48px; height:48px; display:grid; place-items:center; border-radius: 14px;
+  background: linear-gradient(135deg, #b7f1d9, var(--accent));
+  color: #083b2d; font-weight: 900; box-shadow: var(--shadow-s);
 }
-.title{ font-weight: 900; letter-spacing:.2px; font-size: 1.1rem }
+.title{ font-weight: 900; letter-spacing:.2px; font-size: 1.15rem }
 .subtitle{ font-size:.8rem; color: var(--muted) }
 .brand-text{ display:grid; gap:2px }
 
@@ -847,13 +875,18 @@ a, button { font-weight: 600 }
   box-shadow: var(--shadow-s);
 }
 .btn:hover{ box-shadow: var(--shadow-m); transform: translateY(-1px) }
-.btn:focus-visible{ outline: 3px solid #bfdbfe; outline-offset: 2px }
+.btn:focus-visible{ outline: 3px solid #c7f4e6; outline-offset: 2px }
 .btn.primary{
-  color:#fff; background: var(--accent);
-  border-color: var(--accent);
+  color:#07372a; background: linear-gradient(135deg, #7ee6c4, var(--accent));
+  border-color: transparent;
 }
-.btn.primary:hover{ background: var(--accent-600) }
-.btn.danger{ color:#fff; background: var(--danger); border-color: var(--danger) }
+.btn.primary:hover{ filter: brightness(1.03) }
+.btn.danger{
+  color:#fff; background: #e26363; border-color: #e26363;
+}
+.btn.subtle{
+  background:#faf7f2; border-color:#e9e2d8;
+}
 .icon-btn{
   border: 1.5px solid var(--border);
   background: var(--panel);
@@ -863,19 +896,20 @@ a, button { font-weight: 600 }
   cursor: pointer;
 }
 .link{
-  background: transparent; border: 0; color: var(--accent); cursor: pointer;
+  background: transparent; border: 0; color: #0f9e73; cursor: pointer;
   padding: 6px 8px; border-radius: 8px;
 }
-.link:hover{ background: #e8f0ff }
-.link.danger{ color: var(--danger) }
+.link:hover{ background: #e8fff7 }
+.link.danger{ color: #d04b4b }
 
+/* Upload */
 label.btn { position: relative; overflow: hidden }
 label.btn input[type="file"]{ position:absolute; inset:0; opacity:0; cursor:pointer }
 
-/* Filtros (sólido) */
+/* Filtros */
 .filters{
   display:grid; grid-template-columns: 2fr 2fr 1.2fr auto auto; gap:12px;
-  margin: 0 14px; padding: 14px 18px; background: var(--panel);
+  margin: 0 16px; padding: 16px 18px; background: var(--panel);
   border: 1px solid var(--border); border-radius: var(--radius-l); box-shadow: var(--shadow-m);
   align-items: end;
 }
@@ -890,16 +924,16 @@ label.btn input[type="file"]{ position:absolute; inset:0; opacity:0; cursor:poin
 .field textarea{ resize: vertical }
 .field input::placeholder, .field textarea::placeholder { color:#9aa3b2 }
 .field input:focus, .field select:focus, .field textarea:focus{
-  border-color: var(--accent); box-shadow: 0 0 0 3px #dbeafe;
+  border-color: var(--accent); box-shadow: 0 0 0 3px #c8efdf;
 }
 .row{ display:flex; gap:8px }
 
 .segmented{
-  background: #eef2f7; border: 1px solid var(--border); border-radius: var(--radius-s);
+  background: #f2efe8; border: 1px solid var(--border); border-radius: 999px;
   padding: 4px; display:flex; gap:4px
 }
 .segmented button{
-  border:0; background: transparent; border-radius: 10px; padding: 6px 10px; cursor:pointer; color: var(--muted)
+  border:0; background: transparent; border-radius: 999px; padding: 6px 12px; cursor:pointer; color: var(--muted)
 }
 .segmented button.on{
   background:#fff; color: var(--text); border:1px solid var(--border); box-shadow: var(--shadow-s)
@@ -908,30 +942,36 @@ label.btn input[type="file"]{ position:absolute; inset:0; opacity:0; cursor:poin
 .counter{ justify-self:end; align-self:center }
 .chip{
   display:inline-block; padding: 6px 10px; border-radius: 999px;
-  background:#eaf2ff; color:#1e40af; border: 1px solid #d5e4ff; font-weight:700; font-size:.85rem
+  background:#e8fff7; color:#065f46; border: 1px solid #b9f3df; font-weight:700; font-size:.85rem
 }
 
 /* Cards */
 .cards{
-  padding: 16px 18px; display:grid; grid-template-columns: repeat(auto-fill,minmax(320px,1fr)); gap: 16px;
+  padding: 2px 18px 18px; display:grid; grid-template-columns: repeat(auto-fill,minmax(320px,1fr)); gap: 18px;
 }
 .empty{
   grid-column: 1 / -1; text-align:center; color: var(--muted); padding: 28px;
-  border: 2px dashed var(--border); border-radius: var(--radius-m); background: #f7fafc;
+  border: 2px dashed var(--border); border-radius: var(--radius-m); background: #faf7f2;
 }
 .card{
+  position: relative;
   background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-l);
-  padding: 16px; box-shadow: var(--shadow-m); transition:.15s;
+  padding: 14px 16px; box-shadow: var(--shadow-m); transition:.18s;
 }
 .card:hover{ transform: translateY(-2px) }
-.card-head{ display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom: 10px }
+.card-bar{
+  content:""; position:absolute; left:0; top:0; right:0; height:8px;
+  border-top-left-radius: var(--radius-l); border-top-right-radius: var(--radius-l);
+  background: linear-gradient(90deg, #bff1dd, #a7edd3 40%, #8ee8c8);
+}
+.card-head{ display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top: 4px; margin-bottom: 10px }
 .person{ display:flex; gap:10px; align-items:center }
-.avatar{ width: 44px; height: 44px; display:grid; place-items:center; border-radius: 12px; background: #eef2ff; color:#1e40af; font-weight:800 }
-.name{ font-weight:800; letter-spacing:.2px; font-size: 1.05rem }
+.avatar{ width: 44px; height: 44px; display:grid; place-items:center; border-radius: 12px; background: #e9fbf4; color:#065f46; font-weight:800 }
+.name{ font-weight:800; letter-spacing:.2px; font-size: 1.06rem }
 .id{ font-size:.875rem; color: var(--muted) }
 .grid{ display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:6px }
 .activities{ margin-top: 8px; display:flex; gap: 6px; flex-wrap: wrap }
-.act-chip{ background:#f0f7ff; color:#284b8a; border:1px solid #e0e9ff; padding: 4px 8px; border-radius: 999px; font-size:.8rem }
+.act-chip{ background:#eefcf7; color:#0b4e3c; border:1px solid #c9f0e0; padding: 4px 8px; border-radius: 999px; font-size:.8rem }
 .act-note{ color: var(--muted); font-size: .95rem }
 .card-actions{ display:flex; justify-content:flex-end; gap:10px; margin-top: 12px }
 
@@ -941,12 +981,12 @@ label.btn input[type="file"]{ position:absolute; inset:0; opacity:0; cursor:poin
   letter-spacing:.2px;
 }
 .pill--planta{ background:#ecfdf5; color:#166534; border-color:#a7f3d0 }
-.pill--catedra{ background:#fffbeb; color:#92400e; border-color:#fde68a }
-.pill--contrato{ background:#eff6ff; color:#1e40af; border-color:#bfdbfe }
+.pill--catedra{ background:#fff7e6; color:#7c4a0e; border-color:#f8e0b3 }
+.pill--contrato{ background:#eef6ff; color:#1e40af; border-color:#bfdbfe }
 .pill--neutral{ background:#f1f5f9; color:#334155 }
 
 /* Tabla */
-.table-card{ padding: 12px 18px }
+.table-card{ padding: 0 18px 18px }
 .table-wrapper{
   overflow:auto; border-radius: var(--radius-m); border: 1px solid var(--border);
   background: var(--panel); box-shadow: var(--shadow-m)
@@ -954,24 +994,25 @@ label.btn input[type="file"]{ position:absolute; inset:0; opacity:0; cursor:poin
 .table{ width:100%; border-collapse: collapse; font-size: 0.975rem }
 .table th, .table td{ padding: 12px; border-bottom: 1px solid var(--border) }
 .table thead th{
-  text-align:left; color: var(--muted); background:#f3f6fa; position: sticky; top: 0; z-index: 1; border-bottom:1px solid var(--border-strong)
+  text-align:left; color: var(--muted); background:#faf7f2; position: sticky; top: 0; z-index: 1; border-bottom:1px solid var(--border-strong)
 }
-.table tbody tr:nth-child(odd){ background: #fcfdff }
-.table tbody tr:hover{ background: #eef4ff }
+.table tbody tr:nth-child(odd){ background: #fffefb }
+.table tbody tr:hover{ background: #f6fff9 }
 .table .empty{ text-align:center; color: var(--muted) }
 .row-actions{ display:flex; justify-content:flex-end; gap:8px }
 
 /* Planner (vista semanal) */
-.planner{ padding: 12px 18px; display:grid; gap:12px }
+.planner{ padding: 0 18px 18px; display:grid; gap:12px }
 .planner-head{
   display:flex; align-items:center; justify-content:space-between;
   background: var(--panel); border:1px solid var(--border); border-radius: var(--radius-m); padding: 10px 12px; box-shadow: var(--shadow-s)
 }
 .legend{ display:flex; gap:8px; flex-wrap:wrap }
-.legend-item{ padding: 4px 10px; border-radius: 999px; font-size:.8rem; border:1px solid var(--border); font-weight:700 }
+.legend-item{ padding: 4px 10px; border-radius: 999px; font-size:.8rem; border:1px solid var(--border); font-weight:700; background:#fff }
 .legend-item.planta{ background:#ecfdf5; color:#166534; border-color:#a7f3d0 }
-.legend-item.catedra{ background:#fffbeb; color:#92400e; border-color:#fde68a }
-.legend-item.contrato{ background:#eff6ff; color:#1e40af; border-color:#bfdbfe }
+.legend-item.catedra{ background:#fff7e6; color:#7c4a0e; border-color:#f8e0b3 }
+.legend-item.contrato{ background:#eef6ff; color:#1e40af; border-color:#bfdbfe }
+.legend-item.mode{ background:#eefcf7; color:#0b4e3c; border-color:#c9f0e0 }
 
 .planner-grid{ display:grid; grid-template-columns: 84px 1fr; gap:12px }
 .hours-rail{
@@ -985,79 +1026,69 @@ label.btn input[type="file"]{ position:absolute; inset:0; opacity:0; cursor:poin
 }
 .day-header{
   position: sticky; top: 0; height: 34px; display:inline-flex; align-items:center; justify-content:center;
-  color:#263241; font-weight:700; font-size:.85rem; border-right:1px solid var(--border);
-  width: calc(100%/7); background:#f7f9fc; float:left;
+  color:#2c2f2e; font-weight:700; font-size:.85rem; border-right:1px solid var(--border);
+  width: calc(100%/7); background:#f9f7f3; float:left;
 }
 .day-col{
-  position:relative; width: calc(100%/7); float:left; border-right:1px dashed #e8edf3;
-  background-image: repeating-linear-gradient(to bottom, #eef2f7 0 1px, transparent 1px 60px);
+  position:relative; width: calc(100%/7); float:left; border-right:1px dashed #eadfce;
+  background-image: repeating-linear-gradient(to bottom, #f2eee7 0 1px, transparent 1px 60px);
 }
 .hour-line{ display:none }
 
 .block{
-  position:absolute; left:6px; right:6px; border-radius: 10px; padding: 6px 8px;
-  color:#1f2937; font-size:.85rem; overflow:hidden; border: 1px solid #dfe6ef; box-shadow: var(--shadow-s);
+  position:absolute; left:6px; right:6px; border-radius: 12px; padding: 6px 8px;
+  color:#1f2937; font-size:.85rem; overflow:hidden; border: 1px solid #e3d9c9; box-shadow: var(--shadow-s);
 }
 .block .b-title{ font-weight:800 }
 .block .b-sub{ color: var(--muted); font-weight:600 }
-.k-planta{ background:#d9fbe7 }
-.k-catedra{ background:#fff0c8 }
-.k-contrato{ background:#deebff }
+.k-planta{ background:#d7f7eb }
+.k-catedra{ background:#fff0d6 }
+.k-contrato{ background:#e4efff }
+.block.m-virtual{ border-style: dashed }
+.block.m-presencial{ border-style: solid }
 
 /* Toasts */
 .toasts{ position: fixed; right: 16px; bottom: 16px; display:grid; gap:8px; z-index:60 }
 .toast{
-  background:#ffffff; color:#263241; border:1.5px solid var(--border); padding: 10px 12px;
+  background:#ffffff; color:#2c2f2e; border:1.5px solid var(--border); padding: 10px 12px;
   border-radius: var(--radius-s); box-shadow: var(--shadow-l)
 }
 
-/* ===== MODALES (corregido: SIN transparencia) ===== */
+/* Modales (sólidos) */
 .overlay{
   position: fixed; inset: 0; display:grid; place-items:center;
-  background: rgba(0,0,0,.55);   /* oscurece el fondo de forma clara */
-  padding:16px; z-index:1000;    /* por encima de todo */
+  background: rgba(22, 24, 23, .55);
+  padding:16px; z-index:1000;
 }
 .modal{
   width: min(980px, 96vw);
-  background: #ffffff;          /* panel SÓLIDO */
+  background: #ffffff;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-l);
   padding: 16px;
   box-shadow: var(--shadow-l);
   max-height: 92vh; overflow: auto;
 }
-
-/* Modal contenido */
 .modal-head{ display:flex; align-items:start; justify-content:space-between; gap:12px; margin-bottom:12px }
 .form-grid{ display:grid; grid-template-columns: 1fr 1fr; gap: 12px }
 .form-grid .col-2{ grid-column: 1 / -1 }
 .subhead{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top: 2px }
 .sub-actions{ display:flex; gap:6px; flex-wrap:wrap }
-.horario{ display:grid; grid-template-columns: 140px 120px 120px 1fr 1fr; gap:8px; margin-top: 8px }
+.horario{
+  display:grid; grid-template-columns: 140px 110px 110px 140px 1fr 1fr;
+  gap:8px; margin-top: 8px;
+}
 .horario-right{ display:flex; gap:8px }
 .actividad-row{ display:grid; grid-template-columns: 2fr .7fr 2fr auto; gap:8px; margin-top:8px }
 .form-actions{ display:flex; justify-content:flex-end; gap:8px; padding-top:6px }
 .pre{ white-space: pre-wrap }
+.warnings{ margin-top:8px; background:#fff7e6; border:1px solid #f8e0b3; color:#7c4a0e; border-radius: 10px; padding:8px }
 
+/* Detalle */
 .detail .detail-top{ display:flex; justify-content:space-between; align-items:center }
-.detail .detail-name{ margin: 6px 0 10px; font-size: 1.1rem; font-weight: 900 }
+.detail .detail-name{ margin: 6px 0 10px; font-size: 1.12rem; font-weight: 900 }
 .detail .detail-grid{ display:grid; grid-template-columns: 1fr 1fr; gap: 12px }
 .print-card{ break-inside: avoid; page-break-inside: avoid; border: 1px solid var(--border); border-radius: var(--radius-m); padding: 12px }
-
-/* ===== Sidebar (si tu plantilla usa .app/.sidebar) - todo sólido ===== */
-.app{ min-height:100vh; display:grid; grid-template-columns: 260px 1fr; color: var(--text); background: var(--bg) }
-.sidebar{
-  position: sticky; top:0; height:100vh; padding:18px; border-right:1px solid var(--border);
-  background: #ffffff; display:flex; flex-direction:column; gap:16px
-}
-.brand, .panel, .menu-item{ background:#fff; border:1px solid var(--border); border-radius: var(--radius-m); box-shadow: var(--shadow-s) }
-.menu{ display:grid; gap:8px }
-.menu-item{ display:flex; align-items:center; gap:10px; padding: 10px 12px; color: var(--text); cursor:pointer; transition:.15s }
-.menu-item:hover{ background:#f7faff }
-.menu-item .icon{ width:18px; text-align:center }
-.menu-item.danger{ color:#fff; background: var(--danger); border-color: var(--danger) }
-.menu-item.file{ position:relative; overflow:hidden }
-.menu-item.file input[type="file"]{ position:absolute; inset:0; opacity:0; cursor:pointer }
 
 /* Responsive */
 @media (max-width: 980px){
@@ -1067,8 +1098,6 @@ label.btn input[type="file"]{ position:absolute; inset:0; opacity:0; cursor:poin
   .horario{ grid-template-columns: 1fr 1fr }
   .actividad-row{ grid-template-columns: 1fr 1fr }
   .days, .hours-rail{ max-height: 60vh }
-  .app{ grid-template-columns: 1fr }
-  .sidebar{ position: static; height: auto }
 }
 
 /* Print */

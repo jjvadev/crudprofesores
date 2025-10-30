@@ -502,13 +502,16 @@ const semanaBlocks = computed(() => {
   for (const p of filtrados.value) {
     if (!Array.isArray(p.horarios)) continue
     for (const h of p.horarios) {
+      // si es virtual sin horario, no aparece en la grilla semanal
       const isVirtual = h.modalidad === 'Virtual'
-      const hasSchedule = h.dia && h.inicio && h.fin
+      const hasSchedule = !h.sinHorario && h.dia && h.inicio && h.fin
       if (!hasSchedule) continue
+
       const di = dayIndex(h.dia)
       const s = toMinutes(h.inicio)
       const e = toMinutes(h.fin)
       if (di < 0 || s == null || e == null || e <= s) continue
+
       const mode = isVirtual ? 'm-virtual' : 'm-presencial'
       const emoji = isVirtual ? '💻 Virtual' : '🏫 Presencial'
       const prog = h.programa ? ` • ${h.programa}` : ''
@@ -531,7 +534,7 @@ const virtualSinHorario = computed(() => {
   const out = []
   for (const p of filtrados.value) {
     for (const h of (p.horarios || [])) {
-      if (h?.modalidad === 'Virtual' && (!h.dia || !h.inicio || !h.fin)) {
+      if (h?.modalidad === 'Virtual' && (h.sinHorario || (!h.dia || !h.inicio || !h.fin))) {
         out.push({
           profesor: p.nombre,
           materia: h.materia || 'Clase virtual',
@@ -556,8 +559,8 @@ onMounted(() => {
         ubicacionTrabajo: 'Bloque A - Of. 203', lugarResidencia: 'Laureles, Medellín',
         telefono: '3001234567', email: 'ana.perez@uni.edu',
         horarios: [
-          { dia: 'Lunes', inicio: '08:00', fin: '10:00', modalidad: 'Presencial', materia: 'Cálculo I', programa: 'Ingeniería', aula: 'A-201' },
-          { modalidad: 'Virtual', materia: 'Cálculo I (apoyo virtual)', programa: 'Ingeniería' }
+          { dia: 'Lunes', inicio: '08:00', fin: '10:00', modalidad: 'Presencial', sinHorario: false, materia: 'Cálculo I', programa: 'Ingeniería', aula: 'A-201' },
+          { modalidad: 'Virtual', sinHorario: true, materia: 'Cálculo I (apoyo virtual)', programa: 'Ingeniería' }
         ] },
       { cedula: '1098765432', nombre: 'Carlos Gómez', tipo: 'Catedrático', horasSemanales: 8,
         actividadesLista: [{ nombre: 'Cátedra', horas: 8 }],
@@ -599,11 +602,14 @@ function emptyForm () {
 
 function normalizeHorario(h){
   const hasSch = h?.inicio && h?.fin
+  const isVirtual = h?.modalidad === 'Virtual'
+  const sinHorario = h?.sinHorario ?? (isVirtual && !hasSch)
   return {
     dia: h?.dia || '',
     inicio: h?.inicio || '',
     fin: h?.fin || '',
-    modalidad: h?.modalidad || (hasSch ? 'Presencial' : 'Virtual'),
+    modalidad: isVirtual ? 'Virtual' : (h?.modalidad || (hasSch ? 'Presencial' : 'Virtual')),
+    sinHorario,
     materia: h?.materia || '',
     programa: h?.programa || '',
     aula: h?.aula || ''
@@ -678,14 +684,34 @@ function closeForm () {
 }
 function addHorario () {
   form.value.horarios.push({
-    dia: 'Lunes', inicio: '', fin: '', modalidad: 'Presencial', materia: '', programa: '', aula: ''
+    dia: 'Lunes', inicio: '', fin: '', modalidad: 'Presencial', sinHorario: false, materia: '', programa: '', aula: ''
   })
 }
 function addHorarioPlantilla(dia,inicio,fin,materia,aula){
-  form.value.horarios.push({ dia, inicio, fin, modalidad: 'Presencial', materia, programa: '', aula })
+  form.value.horarios.push({ dia, inicio, fin, modalidad: 'Presencial', sinHorario: false, materia, programa: '', aula })
 }
 function addActividad(){
   form.value.actividadesLista.push({ nombre: '', horas: null, nota: '' })
+}
+
+/* === NUEVO: handlers para modalidad/checkbox === */
+function onModalidadChange(h){
+  if (h.modalidad === 'Presencial') {
+    h.sinHorario = false
+  } else if (h.modalidad === 'Virtual' && h.sinHorario) {
+    // Virtual sin horario: limpia campos de día/hora
+    h.dia = ''
+    h.inicio = ''
+    h.fin = ''
+  }
+}
+function onSinHorarioToggle(h){
+  if (h.sinHorario) {
+    // al marcar "sin horario" limpiamos los campos
+    h.dia = ''
+    h.inicio = ''
+    h.fin = ''
+  }
 }
 
 function validateHorarios(list) {
@@ -693,9 +719,13 @@ function validateHorarios(list) {
   const groups = {}
   for (const h of list) {
     const isVirtual = h.modalidad === 'Virtual'
-    const hasSchedule = h.dia && h.inicio && h.fin
+    const hasSchedule = !h.sinHorario && h.dia && h.inicio && h.fin
+
     // Virtual sin horario: permitido, no valida horas
-    if (isVirtual && !hasSchedule) continue
+    if (isVirtual && !hasSchedule && h.sinHorario) continue
+
+    // Si no hay horario (faltan datos) y no es "sinHorario", pasa sin error
+    if (!hasSchedule && isVirtual) continue
 
     const s = toMinutes(h.inicio), e = toMinutes(h.fin)
     if (hasSchedule && (s == null || e == null)) {
@@ -716,7 +746,6 @@ function validateHorarios(list) {
       const prev = arr[i-1], cur = arr[i]
       if (cur[0] < prev[1]) {
         const p = prev[2], c = cur[2]
-        // 🔧 corrección: mins(cur[1]) (no mins[cur[1])
         warnings.push(`Solape en ${dia}: "${p.materia||'Bloque'}" (${mins(prev[0])}–${mins(prev[1])}) con "${c.materia||'Bloque'}" (${mins(cur[0])}–${mins(cur[1])}).`)
       }
     }
@@ -810,13 +839,13 @@ function renderFichaInnerHTML (p) {
         </tr></thead>
           <tbody>
             ${p.horarios.map(h => `<tr>
-              <td>${(h.modalidad==='Virtual' && (!h.dia||!h.inicio||!h.fin)) ? '—' : (h.dia||'—')}</td>
-              <td>${(h.modalidad==='Virtual' && (!h.dia||!h.inicio||!h.fin)) ? '—' : (h.inicio||'—')}</td>
-              <td>${(h.modalidad==='Virtual' && (!h.dia||!h.inicio||!h.fin)) ? '—' : (h.fin||'—')}</td>
+              <td>${(h.modalidad==='Virtual' && (h.sinHorario || !h.dia||!h.inicio||!h.fin)) ? '—' : (h.dia||'—')}</td>
+              <td>${(h.modalidad==='Virtual' && (h.sinHorario || !h.dia||!h.inicio||!h.fin)) ? '—' : (h.inicio||'—')}</td>
+              <td>${(h.modalidad==='Virtual' && (h.sinHorario || !h.dia||!h.inicio||!h.fin)) ? '—' : (h.fin||'—')}</td>
               <td>${h.materia||'—'}</td>
               <td>${h.programa||'—'}</td>
               <td>${h.aula||'—'}</td>
-              <td>${h.modalidad||'—'}</td>
+              <td>${h.modalidad}${h.modalidad==='Virtual' && h.sinHorario ? ' (sin horario)':''}</td>
             </tr>`).join('')}
           </tbody>
         </table>

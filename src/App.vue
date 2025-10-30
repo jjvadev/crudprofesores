@@ -1,6 +1,5 @@
 <template>
   <div class="shell">
-    <!-- NAV / TOPBAR -->
     <header class="nav no-print">
       <div class="brand">
         <div class="logo">🎓</div>
@@ -24,7 +23,6 @@
       </div>
     </header>
 
-    <!-- FILTER BAR -->
     <section class="filters no-print">
       <div class="field wide">
         <label>Cédula (Enter abre la ficha)</label>
@@ -59,14 +57,13 @@
       </div>
     </section>
 
-    <!-- LIST — CARDS -->
     <section v-if="view==='cards'" class="cards">
       <div v-if="filtrados.length===0" class="empty">
         Sin resultados. Agrega profesores o ajusta los filtros.
       </div>
 
       <article v-for="p in filtrados" :key="p.cedula" class="card">
-        <div class="card-bar"></div>
+        <i class="card-bar" aria-hidden></i>
         <div class="card-head">
           <div class="person">
             <div class="avatar" aria-hidden>👤</div>
@@ -97,7 +94,6 @@
           </div>
         </div>
 
-        <!-- Chips de actividades -->
         <div v-if="(p.actividadesLista && p.actividadesLista.length) || p.actividades" class="activities">
           <template v-if="p.actividadesLista && p.actividadesLista.length">
             <span v-for="(a,i) in p.actividadesLista" :key="i" class="act-chip" :title="a.nota || ''">
@@ -118,7 +114,6 @@
       </article>
     </section>
 
-    <!-- LIST — TABLE -->
     <section v-else-if="view==='table'" class="table-card">
       <div class="table-wrapper">
         <table class="table">
@@ -158,15 +153,13 @@
       </div>
     </section>
 
-    <!-- WEEK PLANNER -->
     <section v-else class="planner">
       <div class="planner-head">
         <div class="legend">
           <span class="legend-item planta">Planta</span>
           <span class="legend-item catedra">Catedrático</span>
           <span class="legend-item contrato">Contrato</span>
-          <span class="legend-item mode">🏫 Presencial</span>
-          <span class="legend-item mode">💻 Virtual</span>
+          <span class="legend-item mode">Virtual (borde punteado)</span>
         </div>
         <div class="muted">Vista semanal de horarios ({{ startHour }}:00–{{ endHour }}:00)</div>
       </div>
@@ -181,7 +174,6 @@
           <div class="day-col" v-for="(d,di) in days" :key="'col-'+d" :style="{height: plannerHeight+'px'}">
             <div v-for="h in hourMarks" :key="d+'-'+h" class="hour-line"></div>
 
-            <!-- Bloques -->
             <div
               v-for="(b, i) in semanaBlocks.filter(x=>x.dayIndex===di)"
               :key="d+'-b-'+i"
@@ -198,14 +190,26 @@
       </div>
 
       <div v-if="semanaBlocks.length===0" class="empty mt">No hay horarios en la vista actual.</div>
+
+      <div v-if="virtualSinHorario.length" class="virtual-panel mt">
+        <div class="virtual-head">Clases virtuales sin horario ({{ virtualSinHorario.length }})</div>
+        <ul class="virtual-list">
+          <li v-for="(v,i) in virtualSinHorario" :key="'virt-'+i">
+            <span class="v-materia">{{ v.materia }}</span>
+            <span class="v-sep">•</span>
+            <span class="v-prof">{{ v.profesor }}</span>
+            <span class="v-sep" v-if="v.programa">•</span>
+            <span class="v-prog" v-if="v.programa">{{ v.programa }}</span>
+            <span class="v-aula" v-if="v.aula"> ({{ v.aula }})</span>
+          </li>
+        </ul>
+      </div>
     </section>
 
-    <!-- TOASTS -->
     <div class="toasts">
       <div v-for="t in toasts" :key="t.id" class="toast">{{ t.msg }}</div>
     </div>
 
-    <!-- MODAL: FORM -->
     <div v-if="showForm" class="overlay">
       <div class="modal">
         <div class="modal-head">
@@ -219,7 +223,7 @@
         <form class="form-grid" @submit.prevent="save">
           <div class="field">
             <label>Cédula *</label>
-            <input v-model.trim="form.cedula" required placeholder="1012345678" />
+            <input v-model.trim="form.cedula" :disabled="formMode==='edit'" required placeholder="1012345678" />
           </div>
           <div class="field">
             <label>Nombre completo *</label>
@@ -238,7 +242,6 @@
             <input v-model.number="form.horasSemanales" type="number" min="0" placeholder="16" />
           </div>
 
-          <!-- ACTIVIDADES ESTRUCTURADAS -->
           <div class="col-2">
             <div class="subhead">
               <label>Actividades (chips) — opcional</label>
@@ -253,7 +256,6 @@
             </div>
           </div>
 
-          <!-- NOTAS LIBRES DE ACTIVIDADES -->
           <div class="field col-2">
             <label>Actividades (texto libre)</label>
             <textarea v-model.trim="form.actividades" rows="2" placeholder="Clases, investigación, tutorías…"></textarea>
@@ -276,7 +278,6 @@
             <input v-model.trim="form.email" type="email" placeholder="Opcional" />
           </div>
 
-          <!-- HORARIOS -->
           <div class="col-2">
             <div class="subhead">
               <label>Horarios (opcional)</label>
@@ -288,7 +289,7 @@
             <div v-if="form.horarios.length===0" class="muted">Aún no has agregado horarios.</div>
 
             <div v-for="(h,idx) in form.horarios" :key="'h-'+idx" class="horario">
-              <select v-model="h.dia">
+              <select v-model="h.dia" :disabled="h.modalidad==='Virtual'">
                 <option value="Lunes">Lunes</option>
                 <option value="Martes">Martes</option>
                 <option value="Miércoles">Miércoles</option>
@@ -297,18 +298,20 @@
                 <option value="Sábado">Sábado</option>
                 <option value="Domingo">Domingo</option>
               </select>
-              <input v-model="h.inicio" type="time" />
-              <input v-model="h.fin" type="time" />
+              <input v-model="h.inicio" type="time" :disabled="h.modalidad==='Virtual'" />
+              <input v-model="h.fin" type="time" :disabled="h.modalidad==='Virtual'" />
               <select v-model="h.modalidad" title="Modalidad">
                 <option value="Presencial">Presencial</option>
                 <option value="Virtual">Virtual</option>
               </select>
               <input v-model.trim="h.materia" placeholder="Materia" />
+              <input v-model.trim="h.programa" placeholder="Programa/Facultad" />
               <div class="horario-right">
                 <input v-model.trim="h.aula" placeholder="Aula" />
                 <button type="button" class="icon-btn" @click="form.horarios.splice(idx,1)">🗑️</button>
               </div>
             </div>
+
             <div v-if="horarioWarnings.length" class="warnings">
               <div v-for="(w,i) in horarioWarnings" :key="'w-'+i">⚠️ {{ w }}</div>
             </div>
@@ -322,7 +325,6 @@
       </div>
     </div>
 
-    <!-- MODAL: DETAIL -->
     <div v-if="showDetail" class="overlay">
       <div class="modal">
         <div class="modal-head">
@@ -384,16 +386,18 @@
                     <th>Inicio</th>
                     <th>Fin</th>
                     <th>Materia</th>
+                    <th>Programa</th>
                     <th>Aula</th>
                     <th>Modalidad</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="(h,i) in detalle.horarios" :key="'dh-'+i">
-                    <td>{{ h.dia }}</td>
-                    <td>{{ h.inicio }}</td>
-                    <td>{{ h.fin }}</td>
+                    <td>{{ h.modalidad==='Virtual' && (!h.dia||!h.inicio||!h.fin) ? '—' : (h.dia || '—') }}</td>
+                    <td>{{ h.modalidad==='Virtual' && (!h.dia||!h.inicio||!h.fin) ? '—' : (h.inicio || '—') }}</td>
+                    <td>{{ h.modalidad==='Virtual' && (!h.dia||!h.inicio||!h.fin) ? '—' : (h.fin || '—') }}</td>
                     <td>{{ h.materia || '—' }}</td>
+                    <td>{{ h.programa || '—' }}</td>
                     <td>{{ h.aula || '—' }}</td>
                     <td>{{ h.modalidad || '—' }}</td>
                   </tr>
@@ -409,21 +413,20 @@
         </div>
       </div>
     </div>
-
   </div>
 </template>
+
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 
 const STORAGE_KEY = 'db_profesores_v1'
 
-/* ===== State ===== */
 const profesores = ref([])
 const query = ref('')
 const filtroTipo = ref('')
 const quickCedula = ref('')
-const view = ref('cards') // 'cards' | 'table' | 'semana'
+const view = ref('cards')
 
 const showForm = ref(false)
 const showDetail = ref(false)
@@ -433,7 +436,6 @@ const form = ref(emptyForm())
 const toasts = ref([])
 const horarioWarnings = ref([])
 
-/* ===== Planner config ===== */
 const startHour = 6
 const endHour = 22
 const pxPerMin = 1
@@ -441,15 +443,11 @@ const plannerHeight = (endHour - startHour) * 60 * pxPerMin
 const days = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo']
 const hourMarks = Array.from({length: endHour - startHour + 1}, (_,i)=> i + startHour)
 
-/* ===== Computed ===== */
 const filtrados = computed(() => {
   const q = query.value.trim().toLowerCase()
   return profesores.value
     .filter(p => !filtroTipo.value || p.tipo === filtroTipo.value)
-    .filter(p => {
-      if (!q) return true
-      return String(p.cedula).toLowerCase().includes(q) || (p.nombre || '').toLowerCase().includes(q)
-    })
+    .filter(p => !q ? true : String(p.cedula).toLowerCase().includes(q) || (p.nombre || '').toLowerCase().includes(q))
     .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''))
 })
 
@@ -458,14 +456,19 @@ const semanaBlocks = computed(() => {
   for (const p of filtrados.value) {
     if (!Array.isArray(p.horarios)) continue
     for (const h of p.horarios) {
-      if (!h || !h.dia || !h.inicio || !h.fin) continue
+      const isVirtual = h.modalidad === 'Virtual'
+      const hasSchedule = h.dia && h.inicio && h.fin
+      if (!hasSchedule) {
+        // si no hay horario, no se dibuja bloque (virtual asíncrono)
+        continue
+      }
       const di = dayIndex(h.dia)
-      if (di < 0) continue
       const s = toMinutes(h.inicio)
       const e = toMinutes(h.fin)
-      if (s == null || e == null || e <= s) continue
-      const mode = h.modalidad === 'Virtual' ? 'm-virtual' : 'm-presencial'
-      const emoji = h.modalidad === 'Virtual' ? '💻 Virtual' : '🏫 Presencial'
+      if (di < 0 || s == null || e == null || e <= s) continue
+      const mode = isVirtual ? 'm-virtual' : 'm-presencial'
+      const emoji = isVirtual ? '💻 Virtual' : '🏫 Presencial'
+      const prog = h.programa ? ` • ${h.programa}` : ''
       blocks.push({
         dayIndex: di,
         top: (s - startHour * 60) * pxPerMin,
@@ -473,14 +476,30 @@ const semanaBlocks = computed(() => {
         kind: kindClass(p.tipo),
         mode,
         title: (h.materia || 'Clase') + (h.aula ? ` · ${h.aula}` : ''),
-        subtitle: `${emoji} • ${p.nombre} (${p.tipo})`,
+        subtitle: `${emoji}${prog} • ${p.nombre} (${p.tipo})`,
       })
     }
   }
   return blocks
 })
 
-/* ===== Lifecycle ===== */
+const virtualSinHorario = computed(() => {
+  const out = []
+  for (const p of filtrados.value) {
+    for (const h of (p.horarios || [])) {
+      if (h?.modalidad === 'Virtual' && (!h.dia || !h.inicio || !h.fin)) {
+        out.push({
+          profesor: p.nombre,
+          materia: h.materia || 'Clase virtual',
+          programa: h.programa || '',
+          aula: h.aula || ''
+        })
+      }
+    }
+  }
+  return out
+})
+
 onMounted(() => {
   loadDB()
   if (profesores.value.length === 0) {
@@ -490,7 +509,10 @@ onMounted(() => {
         actividades: 'Clases de Cálculo I y asesorías.',
         ubicacionTrabajo: 'Bloque A - Of. 203', lugarResidencia: 'Laureles, Medellín',
         telefono: '3001234567', email: 'ana.perez@uni.edu',
-        horarios: [ { dia: 'Lunes', inicio: '08:00', fin: '10:00', modalidad: 'Presencial', materia: 'Cálculo I', aula: 'A-201' } ] },
+        horarios: [
+          { dia: 'Lunes', inicio: '08:00', fin: '10:00', modalidad: 'Presencial', materia: 'Cálculo I', programa: 'Ingeniería', aula: 'A-201' },
+          { modalidad: 'Virtual', materia: 'Cálculo I (virtual apoyo)', programa: 'Ingeniería' } /* sin horario */
+        ] },
       { cedula: '1098765432', nombre: 'Carlos Gómez', tipo: 'Catedrático', horasSemanales: 8,
         actividadesLista: [{ nombre: 'Cátedra', horas: 8 }],
         actividades: 'Cátedra de Programación.',
@@ -507,12 +529,10 @@ onMounted(() => {
   }
 })
 
-/* ===== Watchers ===== */
 watch(() => form.value.horarios, () => {
   horarioWarnings.value = validateHorarios(form.value.horarios)
 }, { deep: true })
 
-/* ===== Helpers & UI ===== */
 function emptyForm () {
   return {
     cedula: '',
@@ -556,7 +576,6 @@ function toMinutes(t) {
 }
 function mins(m){ return `${pad(Math.floor(m/60))}:${pad(m%60)}` }
 
-/* ===== DB ===== */
 function loadDB () {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -573,7 +592,6 @@ function resetDB () {
   toast('DB reiniciada')
 }
 
-/* ===== CRUD ===== */
 function openCreate () {
   formMode.value = 'create'
   form.value = emptyForm()
@@ -593,25 +611,39 @@ function closeForm () {
   horarioWarnings.value = []
 }
 function addHorario () {
-  form.value.horarios.push({ dia: 'Lunes', inicio: '', fin: '', modalidad: 'Presencial', materia: '', aula: '' })
+  form.value.horarios.push({
+    dia: 'Lunes', inicio: '', fin: '', modalidad: 'Presencial', materia: '', programa: '', aula: ''
+  })
 }
 function addHorarioPlantilla(dia,inicio,fin,materia,aula){
-  form.value.horarios.push({ dia, inicio, fin, modalidad: 'Presencial', materia, aula })
+  form.value.horarios.push({ dia, inicio, fin, modalidad: 'Presencial', materia, programa: '', aula })
 }
 function addActividad(){
   form.value.actividadesLista.push({ nombre: '', horas: null, nota: '' })
 }
+
 function validateHorarios(list) {
   const warnings = []
   const groups = {}
   for (const h of list) {
-    if (!h.dia) continue
+    const isVirtual = h.modalidad === 'Virtual'
+    const hasSchedule = h.dia && h.inicio && h.fin
+
+    // Virtual sin horario: permitido y sin warnings
+    if (isVirtual && !hasSchedule) continue
+
+    // Si hay datos de horario, validar formato
     const s = toMinutes(h.inicio), e = toMinutes(h.fin)
-    if (h.inicio && h.fin && (s == null || e == null)) warnings.push(`Formato inválido en ${h.dia} (${h.inicio}–${h.fin}).`)
-    if (s != null && e != null && e <= s) warnings.push(`Hora fin debe ser mayor que inicio en ${h.dia} (${h.inicio}–${h.fin}).`)
-    if (!groups[h.dia]) groups[h.dia] = []
-    if (s != null && e != null) groups[h.dia].push([s,e,h])
+    if (hasSchedule && (s == null || e == null)) warnings.push(`Formato inválido en ${h.dia} (${h.inicio}–${h.fin}).`)
+    if (hasSchedule && s != null && e != null && e <= s) warnings.push(`Hora fin debe ser mayor que inicio en ${h.dia} (${h.inicio}–${h.fin}).`)
+
+    // Solo considerar bloques válidos para detectar solapes (incluye virtual con horario)
+    if (hasSchedule && s != null && e != null) {
+      if (!groups[h.dia]) groups[h.dia] = []
+      groups[h.dia].push([s,e,h])
+    }
   }
+
   for (const dia in groups) {
     const arr = groups[dia].sort((a,b)=>a[0]-b[0])
     for (let i=1;i<arr.length;i++){
@@ -660,14 +692,12 @@ function verDetalle (p) {
   showDetail.value = true
 }
 
-/* ===== Quick search by ID ===== */
 function goQuickCedula () {
   if (!quickCedula.value) return
   const p = profesores.value.find(x => String(x.cedula).trim() === String(quickCedula.value).trim())
   if (p) { verDetalle(p); toast('Profesor encontrado') } else { toast('No existe esa cédula') }
 }
 
-/* ===== Print ===== */
 function imprimirUno (p) {
   const html = renderFichaHTML(p)
   const w = window.open('', '_blank')
@@ -707,14 +737,15 @@ function renderFichaInnerHTML (p) {
     ? `<div style="margin-top:12px">
         <div class="muted">Horarios</div>
         <table><thead><tr>
-          <th>Día</th><th>Inicio</th><th>Fin</th><th>Materia</th><th>Aula</th><th>Modalidad</th>
+          <th>Día</th><th>Inicio</th><th>Fin</th><th>Materia</th><th>Programa</th><th>Aula</th><th>Modalidad</th>
         </tr></thead>
           <tbody>
             ${p.horarios.map(h => `<tr>
-              <td>${h.dia}</td>
-              <td>${h.inicio||'—'}</td>
-              <td>${h.fin||'—'}</td>
+              <td>${(h.modalidad==='Virtual' && (!h.dia||!h.inicio||!h.fin)) ? '—' : (h.dia||'—')}</td>
+              <td>${(h.modalidad==='Virtual' && (!h.dia||!h.inicio||!h.fin)) ? '—' : (h.inicio||'—')}</td>
+              <td>${(h.modalidad==='Virtual' && (!h.dia||!h.inicio||!h.fin)) ? '—' : (h.fin||'—')}</td>
               <td>${h.materia||'—'}</td>
+              <td>${h.programa||'—'}</td>
               <td>${h.aula||'—'}</td>
               <td>${h.modalidad||'—'}</td>
             </tr>`).join('')}
@@ -744,7 +775,6 @@ function renderFichaInnerHTML (p) {
   </div>`
 }
 
-/* ===== Import / Export ===== */
 function exportJSON () {
   const data = JSON.stringify(profesores.value, null, 2)
   const blob = new Blob([data], { type: 'application/json' })
@@ -770,7 +800,15 @@ function handleImport (e) {
         if (!p || !p.cedula) continue
         const key = String(p.cedula).trim()
         const safeHorarios = Array.isArray(p.horarios)
-          ? p.horarios.map(h => ({ ...h, modalidad: h.modalidad || 'Presencial' }))
+          ? p.horarios.map(h => ({
+              dia: h.dia || '',
+              inicio: h.inicio || '',
+              fin: h.fin || '',
+              modalidad: h.modalidad || (h.inicio && h.fin ? 'Presencial' : 'Virtual'),
+              materia: h.materia || '',
+              programa: h.programa || '',
+              aula: h.aula || ''
+            }))
           : []
         map.set(key, {
           ...map.get(key),
@@ -793,8 +831,8 @@ function handleImport (e) {
 }
 </script>
 
+
 <style scoped>
-/* ===== THEME: Arena + Verde Agua (limpio, sólido, sin transparencias) ===== */
 .shell{
   --bg: #f6f3ee;
   --bg-grad-1: #fffefb;
@@ -842,10 +880,8 @@ a, button { font-weight: 600 }
 .no-print {}
 @media print { .no-print { display: none !important } }
 
-/* Layout general */
+/* Topbar / filtros / botones (mismo diseño previo) */
 .shell { min-height: 100vh; display: grid; grid-template-rows: auto auto 1fr; gap: 14px; padding-bottom: 16px }
-
-/* Topbar */
 .nav{
   display:flex; align-items:center; justify-content:space-between; gap:16px;
   padding: 16px 18px; background: var(--panel); border: 1px solid var(--border);
@@ -860,10 +896,8 @@ a, button { font-weight: 600 }
 .title{ font-weight: 900; letter-spacing:.2px; font-size: 1.15rem }
 .subtitle{ font-size:.8rem; color: var(--muted) }
 .brand-text{ display:grid; gap:2px }
-
 .actions{ display:flex; gap:10px; flex-wrap:wrap; align-items:center }
 
-/* Botones */
 .btn{
   border: 1.5px solid var(--border);
   background: var(--panel);
@@ -876,37 +910,18 @@ a, button { font-weight: 600 }
 }
 .btn:hover{ box-shadow: var(--shadow-m); transform: translateY(-1px) }
 .btn:focus-visible{ outline: 3px solid #c7f4e6; outline-offset: 2px }
-.btn.primary{
-  color:#07372a; background: linear-gradient(135deg, #7ee6c4, var(--accent));
-  border-color: transparent;
-}
+.btn.primary{ color:#07372a; background: linear-gradient(135deg, #7ee6c4, var(--accent)); border-color: transparent }
 .btn.primary:hover{ filter: brightness(1.03) }
-.btn.danger{
-  color:#fff; background: #e26363; border-color: #e26363;
-}
-.btn.subtle{
-  background:#faf7f2; border-color:#e9e2d8;
-}
-.icon-btn{
-  border: 1.5px solid var(--border);
-  background: var(--panel);
-  color: var(--text);
-  padding: 6px 10px;
-  border-radius: var(--radius-s);
-  cursor: pointer;
-}
-.link{
-  background: transparent; border: 0; color: #0f9e73; cursor: pointer;
-  padding: 6px 8px; border-radius: 8px;
-}
+.btn.danger{ color:#fff; background: #e26363; border-color: #e26363 }
+.btn.subtle{ background:#faf7f2; border-color:#e9e2d8 }
+.icon-btn{ border: 1.5px solid var(--border); background: var(--panel); color: var(--text); padding: 6px 10px; border-radius: var(--radius-s); cursor: pointer }
+.link{ background: transparent; border: 0; color: #0f9e73; cursor: pointer; padding: 6px 8px; border-radius: 8px }
 .link:hover{ background: #e8fff7 }
 .link.danger{ color: #d04b4b }
 
-/* Upload */
 label.btn { position: relative; overflow: hidden }
 label.btn input[type="file"]{ position:absolute; inset:0; opacity:0; cursor:pointer }
 
-/* Filtros */
 .filters{
   display:grid; grid-template-columns: 2fr 2fr 1.2fr auto auto; gap:12px;
   margin: 0 16px; padding: 16px 18px; background: var(--panel);
@@ -923,47 +938,23 @@ label.btn input[type="file"]{ position:absolute; inset:0; opacity:0; cursor:poin
 }
 .field textarea{ resize: vertical }
 .field input::placeholder, .field textarea::placeholder { color:#9aa3b2 }
-.field input:focus, .field select:focus, .field textarea:focus{
-  border-color: var(--accent); box-shadow: 0 0 0 3px #c8efdf;
-}
-.row{ display:flex; gap:8px }
+.field input:focus, .field select:focus, .field textarea:focus{ border-color: var(--accent); box-shadow: 0 0 0 3px #c8efdf }
+.field input:disabled, .field select:disabled{ background:#f3f0ea; color:#999; cursor:not-allowed; border-color:#e8e1d7 }
 
-.segmented{
-  background: #f2efe8; border: 1px solid var(--border); border-radius: 999px;
-  padding: 4px; display:flex; gap:4px
-}
-.segmented button{
-  border:0; background: transparent; border-radius: 999px; padding: 6px 12px; cursor:pointer; color: var(--muted)
-}
-.segmented button.on{
-  background:#fff; color: var(--text); border:1px solid var(--border); box-shadow: var(--shadow-s)
-}
+.row{ display:flex; gap:8px }
+.segmented{ background: #f2efe8; border: 1px solid var(--border); border-radius: 999px; padding: 4px; display:flex; gap:4px }
+.segmented button{ border:0; background: transparent; border-radius: 999px; padding: 6px 12px; cursor:pointer; color: var(--muted) }
+.segmented button.on{ background:#fff; color: var(--text); border:1px solid var(--border); box-shadow: var(--shadow-s) }
 
 .counter{ justify-self:end; align-self:center }
-.chip{
-  display:inline-block; padding: 6px 10px; border-radius: 999px;
-  background:#e8fff7; color:#065f46; border: 1px solid #b9f3df; font-weight:700; font-size:.85rem
-}
+.chip{ display:inline-block; padding: 6px 10px; border-radius: 999px; background:#e8fff7; color:#065f46; border: 1px solid #b9f3df; font-weight:700; font-size:.85rem }
 
-/* Cards */
-.cards{
-  padding: 2px 18px 18px; display:grid; grid-template-columns: repeat(auto-fill,minmax(320px,1fr)); gap: 18px;
-}
-.empty{
-  grid-column: 1 / -1; text-align:center; color: var(--muted); padding: 28px;
-  border: 2px dashed var(--border); border-radius: var(--radius-m); background: #faf7f2;
-}
-.card{
-  position: relative;
-  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-l);
-  padding: 14px 16px; box-shadow: var(--shadow-m); transition:.18s;
-}
+/* Cards / tabla */
+.cards{ padding: 2px 18px 18px; display:grid; grid-template-columns: repeat(auto-fill,minmax(320px,1fr)); gap: 18px }
+.empty{ grid-column: 1 / -1; text-align:center; color: var(--muted); padding: 28px; border: 2px dashed var(--border); border-radius: var(--radius-m); background: #faf7f2 }
+.card{ position: relative; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-l); padding: 14px 16px; box-shadow: var(--shadow-m); transition:.18s }
 .card:hover{ transform: translateY(-2px) }
-.card-bar{
-  content:""; position:absolute; left:0; top:0; right:0; height:8px;
-  border-top-left-radius: var(--radius-l); border-top-right-radius: var(--radius-l);
-  background: linear-gradient(90deg, #bff1dd, #a7edd3 40%, #8ee8c8);
-}
+.card-bar{ content:""; position:absolute; left:0; top:0; right:0; height:8px; border-top-left-radius: var(--radius-l); border-top-right-radius: var(--radius-l); background: linear-gradient(90deg, #bff1dd, #a7edd3 40%, #8ee8c8) }
 .card-head{ display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top: 4px; margin-bottom: 10px }
 .person{ display:flex; gap:10px; align-items:center }
 .avatar{ width: 44px; height: 44px; display:grid; place-items:center; border-radius: 12px; background: #e9fbf4; color:#065f46; font-weight:800 }
@@ -975,38 +966,25 @@ label.btn input[type="file"]{ position:absolute; inset:0; opacity:0; cursor:poin
 .act-note{ color: var(--muted); font-size: .95rem }
 .card-actions{ display:flex; justify-content:flex-end; gap:10px; margin-top: 12px }
 
-/* Tipo (pill) */
-.pill{
-  display:inline-block; padding: 4px 10px; font-size:.8rem; font-weight:800; border-radius:999px; border:1px solid var(--border);
-  letter-spacing:.2px;
-}
+.pill{ display:inline-block; padding: 4px 10px; font-size:.8rem; font-weight:800; border-radius:999px; border:1px solid var(--border); letter-spacing:.2px }
 .pill--planta{ background:#ecfdf5; color:#166534; border-color:#a7f3d0 }
 .pill--catedra{ background:#fff7e6; color:#7c4a0e; border-color:#f8e0b3 }
 .pill--contrato{ background:#eef6ff; color:#1e40af; border-color:#bfdbfe }
 .pill--neutral{ background:#f1f5f9; color:#334155 }
 
-/* Tabla */
 .table-card{ padding: 0 18px 18px }
-.table-wrapper{
-  overflow:auto; border-radius: var(--radius-m); border: 1px solid var(--border);
-  background: var(--panel); box-shadow: var(--shadow-m)
-}
+.table-wrapper{ overflow:auto; border-radius: var(--radius-m); border: 1px solid var(--border); background: var(--panel); box-shadow: var(--shadow-m) }
 .table{ width:100%; border-collapse: collapse; font-size: 0.975rem }
 .table th, .table td{ padding: 12px; border-bottom: 1px solid var(--border) }
-.table thead th{
-  text-align:left; color: var(--muted); background:#faf7f2; position: sticky; top: 0; z-index: 1; border-bottom:1px solid var(--border-strong)
-}
+.table thead th{ text-align:left; color: var(--muted); background:#faf7f2; position: sticky; top: 0; z-index: 1; border-bottom:1px solid var(--border-strong) }
 .table tbody tr:nth-child(odd){ background: #fffefb }
 .table tbody tr:hover{ background: #f6fff9 }
 .table .empty{ text-align:center; color: var(--muted) }
 .row-actions{ display:flex; justify-content:flex-end; gap:8px }
 
-/* Planner (vista semanal) */
+/* Planner */
 .planner{ padding: 0 18px 18px; display:grid; gap:12px }
-.planner-head{
-  display:flex; align-items:center; justify-content:space-between;
-  background: var(--panel); border:1px solid var(--border); border-radius: var(--radius-m); padding: 10px 12px; box-shadow: var(--shadow-s)
-}
+.planner-head{ display:flex; align-items:center; justify-content:space-between; background: var(--panel); border:1px solid var(--border); border-radius: var(--radius-m); padding: 10px 12px; box-shadow: var(--shadow-s) }
 .legend{ display:flex; gap:8px; flex-wrap:wrap }
 .legend-item{ padding: 4px 10px; border-radius: 999px; font-size:.8rem; border:1px solid var(--border); font-weight:700; background:#fff }
 .legend-item.planta{ background:#ecfdf5; color:#166534; border-color:#a7f3d0 }
@@ -1015,30 +993,15 @@ label.btn input[type="file"]{ position:absolute; inset:0; opacity:0; cursor:poin
 .legend-item.mode{ background:#eefcf7; color:#0b4e3c; border-color:#c9f0e0 }
 
 .planner-grid{ display:grid; grid-template-columns: 84px 1fr; gap:12px }
-.hours-rail{
-  background: var(--panel); border:1px solid var(--border); border-radius: var(--radius-m); padding: 8px; box-shadow: var(--shadow-s)
-}
+.hours-rail{ background: var(--panel); border:1px solid var(--border); border-radius: var(--radius-m); padding: 8px; box-shadow: var(--shadow-s) }
 .hour{ height: 60px; display:flex; align-items:flex-start; justify-content:flex-end; padding-right:6px; color: var(--muted); font-size:.85rem }
 
-.days{
-  position:relative; background: var(--panel); border:1px solid var(--border); border-radius: var(--radius-m);
-  overflow:auto; padding-top: 34px; box-shadow: var(--shadow-s)
-}
-.day-header{
-  position: sticky; top: 0; height: 34px; display:inline-flex; align-items:center; justify-content:center;
-  color:#2c2f2e; font-weight:700; font-size:.85rem; border-right:1px solid var(--border);
-  width: calc(100%/7); background:#f9f7f3; float:left;
-}
-.day-col{
-  position:relative; width: calc(100%/7); float:left; border-right:1px dashed #eadfce;
-  background-image: repeating-linear-gradient(to bottom, #f2eee7 0 1px, transparent 1px 60px);
-}
+.days{ position:relative; background: var(--panel); border:1px solid var(--border); border-radius: var(--radius-m); overflow:auto; padding-top: 34px; box-shadow: var(--shadow-s) }
+.day-header{ position: sticky; top: 0; height: 34px; display:inline-flex; align-items:center; justify-content:center; color:#2c2f2e; font-weight:700; font-size:.85rem; border-right:1px solid var(--border); width: calc(100%/7); background:#f9f7f3; float:left }
+.day-col{ position:relative; width: calc(100%/7); float:left; border-right:1px dashed #eadfce; background-image: repeating-linear-gradient(to bottom, #f2eee7 0 1px, transparent 1px 60px) }
 .hour-line{ display:none }
 
-.block{
-  position:absolute; left:6px; right:6px; border-radius: 12px; padding: 6px 8px;
-  color:#1f2937; font-size:.85rem; overflow:hidden; border: 1px solid #e3d9c9; box-shadow: var(--shadow-s);
-}
+.block{ position:absolute; left:6px; right:6px; border-radius: 12px; padding: 6px 8px; color:#1f2937; font-size:.85rem; overflow:hidden; border: 1px solid #e3d9c9; box-shadow: var(--shadow-s) }
 .block .b-title{ font-weight:800 }
 .block .b-sub{ color: var(--muted); font-weight:600 }
 .k-planta{ background:#d7f7eb }
@@ -1047,44 +1010,42 @@ label.btn input[type="file"]{ position:absolute; inset:0; opacity:0; cursor:poin
 .block.m-virtual{ border-style: dashed }
 .block.m-presencial{ border-style: solid }
 
-/* Toasts */
-.toasts{ position: fixed; right: 16px; bottom: 16px; display:grid; gap:8px; z-index:60 }
-.toast{
-  background:#ffffff; color:#2c2f2e; border:1.5px solid var(--border); padding: 10px 12px;
-  border-radius: var(--radius-s); box-shadow: var(--shadow-l)
+/* Panel de virtuales sin horario */
+.virtual-panel{
+  background:#ffffff; border:1px solid var(--border); border-radius: var(--radius-m);
+  box-shadow: var(--shadow-s); padding: 12px 14px;
 }
+.virtual-head{ font-weight:800; margin-bottom:8px }
+.virtual-list{ list-style:none; padding:0; margin:0; display:grid; gap:6px }
+.virtual-list li{ display:flex; flex-wrap:wrap; gap:6px; align-items:center }
+.v-materia{ font-weight:800 }
+.v-sep{ color: var(--muted) }
+.v-prof{ color:#0f9e73; font-weight:700 }
+.v-prog{ color:#374151; font-weight:600 }
+.v-aula{ color:#6b7280 }
 
-/* Modales (sólidos) */
-.overlay{
-  position: fixed; inset: 0; display:grid; place-items:center;
-  background: rgba(22, 24, 23, .55);
-  padding:16px; z-index:1000;
-}
-.modal{
-  width: min(980px, 96vw);
-  background: #ffffff;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-l);
-  padding: 16px;
-  box-shadow: var(--shadow-l);
-  max-height: 92vh; overflow: auto;
-}
+/* Toasts y modales */
+.toasts{ position: fixed; right: 16px; bottom: 16px; display:grid; gap:8px; z-index:60 }
+.toast{ background:#ffffff; color:#2c2f2e; border:1.5px solid var(--border); padding: 10px 12px; border-radius: var(--radius-s); box-shadow: var(--shadow-l) }
+
+.overlay{ position: fixed; inset: 0; display:grid; place-items:center; background: rgba(22, 24, 23, .55); padding:16px; z-index:1000 }
+.modal{ width: min(980px, 96vw); background: #ffffff; border: 1px solid var(--border-strong); border-radius: var(--radius-l); padding: 16px; box-shadow: var(--shadow-l); max-height: 92vh; overflow: auto }
 .modal-head{ display:flex; align-items:start; justify-content:space-between; gap:12px; margin-bottom:12px }
 .form-grid{ display:grid; grid-template-columns: 1fr 1fr; gap: 12px }
 .form-grid .col-2{ grid-column: 1 / -1 }
 .subhead{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top: 2px }
 .sub-actions{ display:flex; gap:6px; flex-wrap:wrap }
+
+/* Fila de horario con Programa extra */
 .horario{
-  display:grid; grid-template-columns: 140px 110px 110px 140px 1fr 1fr;
+  display:grid; grid-template-columns: 140px 110px 110px 140px 1fr 1fr 1fr;
   gap:8px; margin-top: 8px;
 }
 .horario-right{ display:flex; gap:8px }
-.actividad-row{ display:grid; grid-template-columns: 2fr .7fr 2fr auto; gap:8px; margin-top:8px }
-.form-actions{ display:flex; justify-content:flex-end; gap:8px; padding-top:6px }
+
+/* Detalle / impresión */
 .pre{ white-space: pre-wrap }
 .warnings{ margin-top:8px; background:#fff7e6; border:1px solid #f8e0b3; color:#7c4a0e; border-radius: 10px; padding:8px }
-
-/* Detalle */
 .detail .detail-top{ display:flex; justify-content:space-between; align-items:center }
 .detail .detail-name{ margin: 6px 0 10px; font-size: 1.12rem; font-weight: 900 }
 .detail .detail-grid{ display:grid; grid-template-columns: 1fr 1fr; gap: 12px }
@@ -1096,7 +1057,6 @@ label.btn input[type="file"]{ position:absolute; inset:0; opacity:0; cursor:poin
   .grid{ grid-template-columns: 1fr }
   .form-grid{ grid-template-columns: 1fr }
   .horario{ grid-template-columns: 1fr 1fr }
-  .actividad-row{ grid-template-columns: 1fr 1fr }
   .days, .hours-rail{ max-height: 60vh }
 }
 

@@ -1,5 +1,6 @@
 <template>
   <div class="shell">
+    <!-- TOPBAR -->
     <header class="nav no-print">
       <div class="brand">
         <div class="logo">🎓</div>
@@ -20,9 +21,14 @@
         <button class="btn" @click="exportJSON" title="Exportar JSON">⬇️ Exportar</button>
         <button class="btn" @click="printAll" title="Imprimir lista">🖨️ Imprimir</button>
         <button class="btn danger" @click="resetDB" title="Borrar datos locales">🗑️ Reset</button>
+
+        <button class="btn" @click="toggleSelectionMode">
+          {{ selectionMode ? 'Cancelar selección' : 'Seleccionar' }}
+        </button>
       </div>
     </header>
 
+    <!-- FILTERS -->
     <section class="filters no-print">
       <div class="field wide">
         <label>Cédula (Enter abre la ficha)</label>
@@ -57,13 +63,29 @@
       </div>
     </section>
 
-    <section v-if="view==='cards'" class="cards">
-      <div v-if="filtrados.length===0" class="empty">
-        Sin resultados. Agrega profesores o ajusta los filtros.
+    <!-- BULK ACTIONS -->
+    <section class="bulkbar no-print" v-if="selectionMode">
+      <div class="bulk-left"><strong>{{ selectedCount }}</strong> seleccionado(s)</div>
+      <div class="bulk-right">
+        <button class="btn" @click="selectAllCurrent">Seleccionar visibles</button>
+        <button class="btn" @click="clearSelection">Limpiar</button>
+        <button class="btn" @click="printSelected">Imprimir selección</button>
+        <button class="btn primary" @click="exportSelectedPDF">Exportar PDF</button>
+        <button class="btn" @click="toggleSelectionMode">Salir</button>
       </div>
+    </section>
+
+    <!-- CARDS -->
+    <section v-if="view==='cards'" class="cards">
+      <div v-if="filtrados.length===0" class="empty">Sin resultados. Agrega profesores o ajusta los filtros.</div>
 
       <article v-for="p in filtrados" :key="p.cedula" class="card">
         <i class="card-bar" aria-hidden></i>
+
+        <label v-if="selectionMode" class="select-box">
+          <input type="checkbox" :checked="isSelected(p)" @change="toggleSelect(p)" />
+        </label>
+
         <div class="card-head">
           <div class="person">
             <div class="avatar" aria-hidden>👤</div>
@@ -114,11 +136,15 @@
       </article>
     </section>
 
+    <!-- TABLE -->
     <section v-else-if="view==='table'" class="table-card">
       <div class="table-wrapper">
         <table class="table">
           <thead>
             <tr>
+              <th v-if="selectionMode" style="width:44px">
+                <input type="checkbox" :checked="allVisibleSelected" @change="toggleSelectAllVisible" />
+              </th>
               <th>Cédula</th>
               <th>Nombre</th>
               <th>Tipo</th>
@@ -130,9 +156,12 @@
           </thead>
           <tbody>
             <tr v-if="filtrados.length === 0">
-              <td class="empty" colspan="7">Sin resultados. Agrega profesores o ajusta los filtros.</td>
+              <td class="empty" :colspan="selectionMode?8:7">Sin resultados. Agrega profesores o ajusta los filtros.</td>
             </tr>
             <tr v-for="p in filtrados" :key="p.cedula">
+              <td v-if="selectionMode">
+                <input type="checkbox" :checked="isSelected(p)" @change="toggleSelect(p)" />
+              </td>
               <td class="mono">{{ p.cedula }}</td>
               <td class="semi">{{ p.nombre }}</td>
               <td><span :class="['pill', typePill(p.tipo)]">{{ p.tipo }}</span></td>
@@ -153,6 +182,7 @@
       </div>
     </section>
 
+    <!-- WEEKLY PLANNER -->
     <section v-else class="planner">
       <div class="planner-head">
         <div class="legend">
@@ -206,10 +236,12 @@
       </div>
     </section>
 
+    <!-- TOASTS -->
     <div class="toasts">
       <div v-for="t in toasts" :key="t.id" class="toast">{{ t.msg }}</div>
     </div>
 
+    <!-- MODAL FORM -->
     <div v-if="showForm" class="overlay">
       <div class="modal">
         <div class="modal-head">
@@ -325,6 +357,7 @@
       </div>
     </div>
 
+    <!-- MODAL DETAIL -->
     <div v-if="showDetail" class="overlay">
       <div class="modal">
         <div class="modal-head">
@@ -416,26 +449,11 @@
   </div>
 </template>
 
-
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 
+/* ===== Constantes ===== */
 const STORAGE_KEY = 'db_profesores_v1'
-
-const profesores = ref([])
-const query = ref('')
-const filtroTipo = ref('')
-const quickCedula = ref('')
-const view = ref('cards')
-
-const showForm = ref(false)
-const showDetail = ref(false)
-const detalle = ref(null)
-const formMode = ref('create')
-const form = ref(emptyForm())
-const toasts = ref([])
-const horarioWarnings = ref([])
-
 const startHour = 6
 const endHour = 22
 const pxPerMin = 1
@@ -443,6 +461,27 @@ const plannerHeight = (endHour - startHour) * 60 * pxPerMin
 const days = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo']
 const hourMarks = Array.from({length: endHour - startHour + 1}, (_,i)=> i + startHour)
 
+/* ===== Estado principal ===== */
+const profesores = ref([])
+const query = ref('')
+const filtroTipo = ref('')
+const quickCedula = ref('')
+const view = ref('cards') // 'cards' | 'table' | 'semana'
+
+/* Modales y formularios */
+const showForm = ref(false)
+const showDetail = ref(false)
+const detalle = ref(null)
+const formMode = ref('create') // 'create' | 'edit'
+const form = ref(emptyForm())
+const toasts = ref([])
+const horarioWarnings = ref([])
+
+/* Selección para imprimir/exportar */
+const selectionMode = ref(false)
+const selected = ref(new Set())
+
+/* ===== Computados ===== */
 const filtrados = computed(() => {
   const q = query.value.trim().toLowerCase()
   return profesores.value
@@ -451,17 +490,21 @@ const filtrados = computed(() => {
     .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''))
 })
 
+const selectedCount = computed(() => selected.value.size)
+const allVisibleSelected = computed(() =>
+  filtrados.value.length > 0 &&
+  filtrados.value.every(p => selected.value.has(String(p.cedula).trim()))
+)
+
 const semanaBlocks = computed(() => {
+  // Bloques sólo para horarios con día y horas válidos
   const blocks = []
   for (const p of filtrados.value) {
     if (!Array.isArray(p.horarios)) continue
     for (const h of p.horarios) {
       const isVirtual = h.modalidad === 'Virtual'
       const hasSchedule = h.dia && h.inicio && h.fin
-      if (!hasSchedule) {
-        // si no hay horario, no se dibuja bloque (virtual asíncrono)
-        continue
-      }
+      if (!hasSchedule) continue
       const di = dayIndex(h.dia)
       const s = toMinutes(h.inicio)
       const e = toMinutes(h.fin)
@@ -484,6 +527,7 @@ const semanaBlocks = computed(() => {
 })
 
 const virtualSinHorario = computed(() => {
+  // Lista de clases virtuales sin día/hora para mostrarlas aparte
   const out = []
   for (const p of filtrados.value) {
     for (const h of (p.horarios || [])) {
@@ -500,9 +544,11 @@ const virtualSinHorario = computed(() => {
   return out
 })
 
+/* ===== Ciclo de vida ===== */
 onMounted(() => {
   loadDB()
   if (profesores.value.length === 0) {
+    // Datos de ejemplo
     profesores.value = [
       { cedula: '1012345678', nombre: 'Ana María Pérez', tipo: 'Planta', horasSemanales: 16,
         actividadesLista: [{ nombre: 'Tutorías', horas: 2 }, { nombre: 'Investigación', horas: 4 }],
@@ -511,7 +557,7 @@ onMounted(() => {
         telefono: '3001234567', email: 'ana.perez@uni.edu',
         horarios: [
           { dia: 'Lunes', inicio: '08:00', fin: '10:00', modalidad: 'Presencial', materia: 'Cálculo I', programa: 'Ingeniería', aula: 'A-201' },
-          { modalidad: 'Virtual', materia: 'Cálculo I (virtual apoyo)', programa: 'Ingeniería' } /* sin horario */
+          { modalidad: 'Virtual', materia: 'Cálculo I (apoyo virtual)', programa: 'Ingeniería' }
         ] },
       { cedula: '1098765432', nombre: 'Carlos Gómez', tipo: 'Catedrático', horasSemanales: 8,
         actividadesLista: [{ nombre: 'Cátedra', horas: 8 }],
@@ -529,10 +575,12 @@ onMounted(() => {
   }
 })
 
+/* Validación dinámica de horarios del formulario */
 watch(() => form.value.horarios, () => {
   horarioWarnings.value = validateHorarios(form.value.horarios)
 }, { deep: true })
 
+/* ===== Utilidades ===== */
 function emptyForm () {
   return {
     cedula: '',
@@ -548,6 +596,20 @@ function emptyForm () {
     horarios: [],
   }
 }
+
+function normalizeHorario(h){
+  const hasSch = h?.inicio && h?.fin
+  return {
+    dia: h?.dia || '',
+    inicio: h?.inicio || '',
+    fin: h?.fin || '',
+    modalidad: h?.modalidad || (hasSch ? 'Presencial' : 'Virtual'),
+    materia: h?.materia || '',
+    programa: h?.programa || '',
+    aula: h?.aula || ''
+  }
+}
+
 function toast (msg) {
   const id = Math.random().toString(36).slice(2)
   toasts.value.push({ id, msg })
@@ -576,6 +638,7 @@ function toMinutes(t) {
 }
 function mins(m){ return `${pad(Math.floor(m/60))}:${pad(m%60)}` }
 
+/* ===== Base de datos (LocalStorage) ===== */
 function loadDB () {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -592,6 +655,7 @@ function resetDB () {
   toast('DB reiniciada')
 }
 
+/* ===== CRUD ===== */
 function openCreate () {
   formMode.value = 'create'
   form.value = emptyForm()
@@ -600,8 +664,10 @@ function openCreate () {
 }
 function openEdit (p) {
   formMode.value = 'edit'
-  form.value = JSON.parse(JSON.stringify(p))
-  if (!Array.isArray(form.value.actividadesLista)) form.value.actividadesLista = []
+  const clone = JSON.parse(JSON.stringify(p))
+  clone.horarios = Array.isArray(clone.horarios) ? clone.horarios.map(normalizeHorario) : []
+  if (!Array.isArray(clone.actividadesLista)) clone.actividadesLista = []
+  form.value = clone
   horarioWarnings.value = validateHorarios(form.value.horarios || [])
   showForm.value = true
 }
@@ -628,28 +694,29 @@ function validateHorarios(list) {
   for (const h of list) {
     const isVirtual = h.modalidad === 'Virtual'
     const hasSchedule = h.dia && h.inicio && h.fin
-
-    // Virtual sin horario: permitido y sin warnings
+    // Virtual sin horario: permitido, no valida horas
     if (isVirtual && !hasSchedule) continue
 
-    // Si hay datos de horario, validar formato
     const s = toMinutes(h.inicio), e = toMinutes(h.fin)
-    if (hasSchedule && (s == null || e == null)) warnings.push(`Formato inválido en ${h.dia} (${h.inicio}–${h.fin}).`)
-    if (hasSchedule && s != null && e != null && e <= s) warnings.push(`Hora fin debe ser mayor que inicio en ${h.dia} (${h.inicio}–${h.fin}).`)
-
-    // Solo considerar bloques válidos para detectar solapes (incluye virtual con horario)
+    if (hasSchedule && (s == null || e == null)) {
+      warnings.push(`Formato inválido en ${h.dia} (${h.inicio}–${h.fin}).`)
+      continue
+    }
+    if (hasSchedule && s != null && e != null && e <= s) {
+      warnings.push(`Hora fin debe ser mayor que inicio en ${h.dia} (${h.inicio}–${h.fin}).`)
+    }
     if (hasSchedule && s != null && e != null) {
       if (!groups[h.dia]) groups[h.dia] = []
       groups[h.dia].push([s,e,h])
     }
   }
-
   for (const dia in groups) {
     const arr = groups[dia].sort((a,b)=>a[0]-b[0])
     for (let i=1;i<arr.length;i++){
       const prev = arr[i-1], cur = arr[i]
       if (cur[0] < prev[1]) {
         const p = prev[2], c = cur[2]
+        // 🔧 corrección: mins(cur[1]) (no mins[cur[1])
         warnings.push(`Solape en ${dia}: "${p.materia||'Bloque'}" (${mins(prev[0])}–${mins(prev[1])}) con "${c.materia||'Bloque'}" (${mins(cur[0])}–${mins(cur[1])}).`)
       }
     }
@@ -692,12 +759,14 @@ function verDetalle (p) {
   showDetail.value = true
 }
 
+/* ===== Búsqueda rápida ===== */
 function goQuickCedula () {
   if (!quickCedula.value) return
   const p = profesores.value.find(x => String(x.cedula).trim() === String(quickCedula.value).trim())
   if (p) { verDetalle(p); toast('Profesor encontrado') } else { toast('No existe esa cédula') }
 }
 
+/* ===== Impresión / Exportación ===== */
 function imprimirUno (p) {
   const html = renderFichaHTML(p)
   const w = window.open('', '_blank')
@@ -707,15 +776,15 @@ function imprimirUno (p) {
   w.print()
 }
 function printAll () {
-  if (filtrados.value.length === 0) { alert('No hay profesores para imprimir.'); return }
-  const cards = filtrados.value.map(p => renderFichaInnerHTML(p)).join('')
+  printList(filtrados.value)
+}
+function printList (list) {
+  if (!list.length) { alert('No hay profesores para imprimir.'); return }
+  const cards = list.map(p => renderFichaInnerHTML(p)).join('')
   const html = `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"/><title>Profesores</title>
   <style>${printStyles()}</style></head><body><h1>Profesores</h1><div class="grid">${cards}</div></body></html>`
   const w = window.open('', '_blank')
-  w.document.write(html)
-  w.document.close()
-  w.focus()
-  w.print()
+  w.document.write(html); w.document.close(); w.focus(); w.print()
 }
 function renderFichaHTML (p) {
   const inner = renderFichaInnerHTML(p)
@@ -775,6 +844,72 @@ function renderFichaInnerHTML (p) {
   </div>`
 }
 
+/* ===== Selección (helpers) ===== */
+function toggleSelectionMode () {
+  selectionMode.value = !selectionMode.value
+  if (!selectionMode.value) selected.value = new Set()
+}
+function isSelected (p) { return selected.value.has(String(p.cedula).trim()) }
+function toggleSelect (p) {
+  const key = String(p.cedula).trim()
+  if (selected.value.has(key)) selected.value.delete(key)
+  else selected.value.add(key)
+  selected.value = new Set(selected.value) // trigger reactivity
+}
+function selectAllCurrent () {
+  for (const p of filtrados.value) selected.value.add(String(p.cedula).trim())
+  selected.value = new Set(selected.value)
+}
+function clearSelection () { selected.value = new Set() }
+function toggleSelectAllVisible (e) {
+  if (e && e.target && e.target.checked) selectAllCurrent()
+  else {
+    for (const p of filtrados.value) selected.value.delete(String(p.cedula).trim())
+    selected.value = new Set(selected.value)
+  }
+}
+function getSelectedList () {
+  if (!selected.value.size) return filtrados.value.slice()
+  return filtrados.value.filter(p => selected.value.has(String(p.cedula).trim()))
+}
+function printSelected () {
+  const list = getSelectedList()
+  printList(list)
+}
+
+/* ===== Exportar a PDF (html2pdf.js) ===== */
+async function ensureHtml2Pdf () {
+  if (window.html2pdf) return
+  await new Promise((resolve, reject) => {
+    const s = document.createElement('script')
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
+    s.onload = resolve; s.onerror = reject
+    document.head.appendChild(s)
+  })
+}
+async function exportSelectedPDF () {
+  const list = getSelectedList()
+  if (list.length === 0) { alert('No hay profesores para exportar.'); return }
+  try {
+    await ensureHtml2Pdf()
+    const container = document.createElement('div')
+    container.innerHTML = `<div style="font-family:Inter,Arial,sans-serif">${list.map(p => renderFichaInnerHTML(p)).join('')}</div>`
+    const opt = {
+      margin:       10,
+      filename:     `profesores_${new Date().toISOString().slice(0,10)}.pdf`,
+      image:        { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2, useCORS: true },
+      jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    }
+    await window.html2pdf().set(opt).from(container).save()
+    toast('PDF exportado')
+  } catch (e) {
+    console.error(e)
+    alert('No se pudo exportar a PDF. Usa "Imprimir" y elige Guardar como PDF.')
+  }
+}
+
+/* ===== Import/Export JSON ===== */
 function exportJSON () {
   const data = JSON.stringify(profesores.value, null, 2)
   const blob = new Blob([data], { type: 'application/json' })
@@ -800,15 +935,7 @@ function handleImport (e) {
         if (!p || !p.cedula) continue
         const key = String(p.cedula).trim()
         const safeHorarios = Array.isArray(p.horarios)
-          ? p.horarios.map(h => ({
-              dia: h.dia || '',
-              inicio: h.inicio || '',
-              fin: h.fin || '',
-              modalidad: h.modalidad || (h.inicio && h.fin ? 'Presencial' : 'Virtual'),
-              materia: h.materia || '',
-              programa: h.programa || '',
-              aula: h.aula || ''
-            }))
+          ? p.horarios.map(normalizeHorario)
           : []
         map.set(key, {
           ...map.get(key),
@@ -880,8 +1007,10 @@ a, button { font-weight: 600 }
 .no-print {}
 @media print { .no-print { display: none !important } }
 
-/* Topbar / filtros / botones (mismo diseño previo) */
-.shell { min-height: 100vh; display: grid; grid-template-rows: auto auto 1fr; gap: 14px; padding-bottom: 16px }
+/* Layout */
+.shell { min-height: 100vh; display: grid; grid-template-rows: auto auto auto 1fr; gap: 14px; padding-bottom: 16px }
+
+/* Topbar */
 .nav{
   display:flex; align-items:center; justify-content:space-between; gap:16px;
   padding: 16px 18px; background: var(--panel); border: 1px solid var(--border);
@@ -918,10 +1047,10 @@ a, button { font-weight: 600 }
 .link{ background: transparent; border: 0; color: #0f9e73; cursor: pointer; padding: 6px 8px; border-radius: 8px }
 .link:hover{ background: #e8fff7 }
 .link.danger{ color: #d04b4b }
-
 label.btn { position: relative; overflow: hidden }
 label.btn input[type="file"]{ position:absolute; inset:0; opacity:0; cursor:pointer }
 
+/* Filtros */
 .filters{
   display:grid; grid-template-columns: 2fr 2fr 1.2fr auto auto; gap:12px;
   margin: 0 16px; padding: 16px 18px; background: var(--panel);
@@ -949,7 +1078,23 @@ label.btn input[type="file"]{ position:absolute; inset:0; opacity:0; cursor:poin
 .counter{ justify-self:end; align-self:center }
 .chip{ display:inline-block; padding: 6px 10px; border-radius: 999px; background:#e8fff7; color:#065f46; border: 1px solid #b9f3df; font-weight:700; font-size:.85rem }
 
-/* Cards / tabla */
+/* Bulk actions */
+.bulkbar{
+  margin: 0 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-m);
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.bulk-left{ font-weight: 800 }
+.bulk-right{ display: flex; gap: 8px; flex-wrap: wrap }
+
+/* Cards */
 .cards{ padding: 2px 18px 18px; display:grid; grid-template-columns: repeat(auto-fill,minmax(320px,1fr)); gap: 18px }
 .empty{ grid-column: 1 / -1; text-align:center; color: var(--muted); padding: 28px; border: 2px dashed var(--border); border-radius: var(--radius-m); background: #faf7f2 }
 .card{ position: relative; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-l); padding: 14px 16px; box-shadow: var(--shadow-m); transition:.18s }
@@ -965,13 +1110,21 @@ label.btn input[type="file"]{ position:absolute; inset:0; opacity:0; cursor:poin
 .act-chip{ background:#eefcf7; color:#0b4e3c; border:1px solid #c9f0e0; padding: 4px 8px; border-radius: 999px; font-size:.8rem }
 .act-note{ color: var(--muted); font-size: .95rem }
 .card-actions{ display:flex; justify-content:flex-end; gap:10px; margin-top: 12px }
-
 .pill{ display:inline-block; padding: 4px 10px; font-size:.8rem; font-weight:800; border-radius:999px; border:1px solid var(--border); letter-spacing:.2px }
 .pill--planta{ background:#ecfdf5; color:#166534; border-color:#a7f3d0 }
 .pill--catedra{ background:#fff7e6; color:#7c4a0e; border-color:#f8e0b3 }
 .pill--contrato{ background:#eef6ff; color:#1e40af; border-color:#bfdbfe }
 .pill--neutral{ background:#f1f5f9; color:#334155 }
 
+/* Card selection checkbox */
+.select-box{
+  position: absolute; top: 10px; left: 10px;
+  background: #fff; border: 1px solid var(--border); border-radius: 10px;
+  padding: 4px; box-shadow: var(--shadow-s);
+}
+.select-box input{ width: 18px; height: 18px }
+
+/* Tabla */
 .table-card{ padding: 0 18px 18px }
 .table-wrapper{ overflow:auto; border-radius: var(--radius-m); border: 1px solid var(--border); background: var(--panel); box-shadow: var(--shadow-m) }
 .table{ width:100%; border-collapse: collapse; font-size: 0.975rem }
@@ -981,6 +1134,7 @@ label.btn input[type="file"]{ position:absolute; inset:0; opacity:0; cursor:poin
 .table tbody tr:hover{ background: #f6fff9 }
 .table .empty{ text-align:center; color: var(--muted) }
 .row-actions{ display:flex; justify-content:flex-end; gap:8px }
+.table input[type="checkbox"]{ width: 18px; height: 18px; accent-color: var(--accent) }
 
 /* Planner */
 .planner{ padding: 0 18px 18px; display:grid; gap:12px }
@@ -1010,11 +1164,8 @@ label.btn input[type="file"]{ position:absolute; inset:0; opacity:0; cursor:poin
 .block.m-virtual{ border-style: dashed }
 .block.m-presencial{ border-style: solid }
 
-/* Panel de virtuales sin horario */
-.virtual-panel{
-  background:#ffffff; border:1px solid var(--border); border-radius: var(--radius-m);
-  box-shadow: var(--shadow-s); padding: 12px 14px;
-}
+/* Virtuales sin horario */
+.virtual-panel{ background:#ffffff; border:1px solid var(--border); border-radius: var(--radius-m); box-shadow: var(--shadow-s); padding: 12px 14px }
 .virtual-head{ font-weight:800; margin-bottom:8px }
 .virtual-list{ list-style:none; padding:0; margin:0; display:grid; gap:6px }
 .virtual-list li{ display:flex; flex-wrap:wrap; gap:6px; align-items:center }
@@ -1024,7 +1175,7 @@ label.btn input[type="file"]{ position:absolute; inset:0; opacity:0; cursor:poin
 .v-prog{ color:#374151; font-weight:600 }
 .v-aula{ color:#6b7280 }
 
-/* Toasts y modales */
+/* Toasts & Modals */
 .toasts{ position: fixed; right: 16px; bottom: 16px; display:grid; gap:8px; z-index:60 }
 .toast{ background:#ffffff; color:#2c2f2e; border:1.5px solid var(--border); padding: 10px 12px; border-radius: var(--radius-s); box-shadow: var(--shadow-l) }
 
@@ -1036,7 +1187,7 @@ label.btn input[type="file"]{ position:absolute; inset:0; opacity:0; cursor:poin
 .subhead{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top: 2px }
 .sub-actions{ display:flex; gap:6px; flex-wrap:wrap }
 
-/* Fila de horario con Programa extra */
+/* Horario row (con Programa) */
 .horario{
   display:grid; grid-template-columns: 140px 110px 110px 140px 1fr 1fr 1fr;
   gap:8px; margin-top: 8px;
